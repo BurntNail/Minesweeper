@@ -1,0 +1,148 @@
+use crate::board::{Board, GridElementType};
+use eframe::epaint::StrokeKind;
+use eframe::{App, Frame};
+use egui::{Align2, Color32, Context, FontId, Rect, Sense, Stroke, pos2, vec2, Grid, Slider, Widget, CursorIcon};
+
+pub struct MinesweeperApp {
+    board: Board,
+    next_width: usize,
+    next_mines: usize,
+}
+
+impl MinesweeperApp {
+    pub fn new(width: usize, number_of_mines: usize) -> Option<Self> {
+        Board::new(width, number_of_mines).map(|board| {
+            Self { board,
+                next_width: width,
+                next_mines: number_of_mines
+            }
+        })
+    }
+}
+
+impl App for MinesweeperApp {
+    fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
+        egui::TopBottomPanel::top("top panel").show(ctx, |ui| {
+            let status = match (
+                self.board.game_has_been_lost(),
+                self.board.game_has_been_won(),
+            ) {
+                (true, _) => format!("Game Lost: {} correct flag(s)", self.board.successfully_flagged()),
+                (_, true) => "Game Won".to_string(),
+                _ => "Game still being played".to_string(),
+            };
+
+            Grid::new("top bit grid").show(ui, |ui| {
+                {
+                    ui.label(status);
+
+                    if ui.button("Give Up?").clicked() {
+                        self.board.give_up();
+                    }
+                    if ui.button("Reset Game?").clicked() {
+                        self.board.reset(Some(self.next_mines), Some(self.next_width));
+                    }
+                }
+                ui.end_row();
+                {
+                    ui.label("Width/Height: ");
+                    let min_width = ((self.next_mines as f32).sqrt().ceil() as usize).max(2);
+                    Slider::new(&mut self.next_width, min_width..=100).logarithmic(true).ui(ui);
+
+                    ui.label(format!("Flags Placed: {}", self.board.flags_placed()));
+
+                }
+                ui.end_row();
+                {
+                    ui.label("Mines: ");
+                    let max_mines = self.next_width * self.next_width - 1;
+                    Slider::new(&mut self.next_mines, self.next_width..=max_mines).logarithmic(true).ui(ui);
+
+                    ui.label(format!("Total Mines: {}", self.board.total_mines()));
+
+                }
+                ui.end_row();
+            });
+        });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            let available_space = ui.available_rect_before_wrap();
+
+            let width_to_be_used = available_space.width().min(available_space.height()) * 0.95;
+            let cell_width = width_to_be_used / self.board.get_width_height() as f32;
+
+            let flag_cell_width = cell_width * 0.5;
+            let flag_cell_delta_pos = (cell_width - flag_cell_width) / 2.0;
+
+            let start_x =
+                available_space.left() + (available_space.width() - width_to_be_used) / 2.0;
+            let mut start_y =
+                available_space.top() + (available_space.height() - width_to_be_used) / 2.0;
+
+            let mut row = 0;
+            for (index, cell) in self.board.render().into_iter().enumerate() {
+                let column = index % self.board.get_width_height();
+                let stroke_width = (cell_width * 0.2).max(1.0);
+                let entire_thing_rect = Rect {
+                    min: pos2(cell_width.mul_add(column as f32, start_x), start_y),
+                    max: pos2(
+                        cell_width.mul_add((column + 1) as f32, start_x),
+                        start_y + cell_width,
+                    ),
+                };
+
+                let colour = match cell.ty {
+                    GridElementType::Discovered => Color32::DARK_GRAY,
+                    GridElementType::Exploded => Color32::RED,
+                    GridElementType::Mine => Color32::PURPLE,
+                    GridElementType::Undiscovered => Color32::WHITE,
+                };
+
+                ui.painter().rect(
+                    entire_thing_rect,
+                    0.0,
+                    colour,
+                    Stroke::new((cell_width * 0.2).max(1.0), Color32::GRAY),
+                    StrokeKind::Middle,
+                );
+                if cell.flagged {
+                    let min = entire_thing_rect.min + vec2(flag_cell_delta_pos, flag_cell_delta_pos);
+                    let rect = Rect {
+                        min,
+                        max: min + vec2(flag_cell_width, flag_cell_width),
+                    };
+                    ui.painter().rect_filled(rect, 0.0, Color32::BLUE);
+                }
+                if let Some(count) = cell.count {
+                    ui.painter().text(
+                        pos2(entire_thing_rect.min.x + cell_width / 2.0, entire_thing_rect.min.y + cell_width / 2.0),
+                        Align2::CENTER_CENTER,
+                        count.to_string(),
+                        FontId::monospace(cell_width / 4.0 * 3.0),
+                        Color32::BLACK,
+                    );
+                }
+
+                let rsp = ui.allocate_rect({
+                    let delta = stroke_width;
+                       Rect {
+                           min: entire_thing_rect.min + vec2(delta, delta),
+                           max: entire_thing_rect.max - vec2(delta, delta),
+                       }
+                   }, Sense::CLICK).on_hover_cursor(CursorIcon::PointingHand);
+
+                let pos = (column, row);
+                if rsp.clicked() {
+                    self.board.click(pos);
+                } else if rsp.secondary_clicked() {
+                    self.board.toggle_flag(pos);
+                }
+
+                if column == self.board.get_width_height() - 1 {
+                    start_y += cell_width;
+                    row += 1;
+                }
+            }
+        });
+    }
+}
