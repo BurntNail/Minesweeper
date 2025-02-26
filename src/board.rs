@@ -100,6 +100,7 @@ impl Board {
         (idx / self.data.width, idx % self.data.width)
     }
 
+    #[allow(dead_code)]
     const fn coords_to_index(&self, (x, y): (usize, usize)) -> usize {
         y * self.data.width + x
     }
@@ -144,7 +145,7 @@ impl Board {
         }
 
         self.data.clicked.insert(pos);
-        let clicked_idx = self.coords_to_index(pos);
+
         if self.data.mines.is_empty() {
             let mut left_to_place = self.data.number_of_mines;
 
@@ -152,13 +153,14 @@ impl Board {
                 let new_mine_candidate = self
                     .rng
                     .random_range(0..(self.data.width * self.data.width));
-                if new_mine_candidate == clicked_idx {
+                let new_mine_candidate = self.index_to_coords(new_mine_candidate);
+                if new_mine_candidate == pos || self.data.mines.contains(&new_mine_candidate) {
                     continue;
                 }
 
                 self.data
                     .mines
-                    .insert(self.index_to_coords(new_mine_candidate));
+                    .insert(new_mine_candidate);
 
                 left_to_place -= 1;
                 if left_to_place == 0 {
