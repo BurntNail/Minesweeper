@@ -16,9 +16,9 @@ fn main() {
     eframe::run_native(
         "Minesweeper EGUI",
         options,
-        Box::new(|_cc| {
+        Box::new(|cc| {
             Ok(Box::new(
-                MinesweeperApp::new(size, number_of_mines).expect("unable to create board"),
+                MinesweeperApp::new(size, number_of_mines, cc).expect("unable to create board"),
             ))
         }),
     )

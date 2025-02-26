@@ -1,6 +1,6 @@
-use crate::board::{Board, GridElementType};
+use crate::board::{Board, Data, GridElementType};
 use eframe::epaint::StrokeKind;
-use eframe::{App, Frame};
+use eframe::{App, CreationContext, Frame, Storage};
 use egui::{Align2, Color32, Context, FontId, Rect, Sense, Stroke, pos2, vec2, Grid, Slider, Widget, CursorIcon, Scene};
 
 pub struct MinesweeperApp {
@@ -10,15 +10,56 @@ pub struct MinesweeperApp {
     next_mines: usize,
 }
 
+
+impl TryFrom<String> for Data {
+    type Error = ();
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        todo!()
+    }
+}
+
+impl From<Data> for String {
+    fn from(value: Data) -> Self {
+        todo!()
+    }
+}
+
+
 impl MinesweeperApp {
-    pub fn new(width: usize, number_of_mines: usize) -> Option<Self> {
-        Board::new(width, number_of_mines).map(|board| {
-            Self { board,
-                next_width: width,
-                next_mines: number_of_mines,
-                board_rect: Rect::ZERO
+    pub fn new(width: usize, number_of_mines: usize, cc: &CreationContext) -> Option<Self> {
+        let mut previous_data = None;
+
+        if let Some(data) = cc.storage.and_then(|x| x.get_string("data")) {
+            match data.try_into() {
+                Ok(x) => previous_data = Some(x),
+                Err(e) => {
+                    eprintln!("Error parsing previous data: {e:?}");
+                }
             }
-        })
+        }
+
+        match previous_data {
+            Some(x) => {
+                let board = Board::from_previous_data(x);
+                Some(Self {
+                    next_width: board.get_width(),
+                    next_mines: board.total_mines(),
+                    board,
+                    board_rect: Rect::ZERO
+                })
+            }
+            None => {
+                Board::new(width, number_of_mines).map(|board| {
+                    Self { board,
+                        next_width: width,
+                        next_mines: number_of_mines,
+                        board_rect: Rect::ZERO
+                    }
+                })
+            }
+        }
+
     }
 }
 
@@ -42,7 +83,7 @@ impl App for MinesweeperApp {
                         self.board.give_up();
                     }
                     if ui.button("Reset Game?").clicked() {
-                        self.board.reset(Some(self.next_mines), Some(self.next_width));
+                        self.board.reset(Some((self.next_width, self.next_mines)));
                     }
                 }
                 ui.end_row();
@@ -71,12 +112,12 @@ impl App for MinesweeperApp {
             let mut inner_rect = Rect::ZERO;
 
             let rsp = Scene::new()
-                // .zoom_range(1.0..=5.0)
+                .zoom_range(0.05..=5.0)
                 .show(ui, &mut self.board_rect, |ui| {
                     let available_space = ui.available_rect_before_wrap();
 
                     let width_to_be_used = available_space.width().min(available_space.height()) * 0.95;
-                    let cell_width = width_to_be_used / self.board.get_width_height() as f32;
+                    let cell_width = width_to_be_used / self.board.get_width() as f32;
 
                     let flag_cell_width = cell_width * 0.5;
                     let flag_cell_delta_pos = (cell_width - flag_cell_width) / 2.0;
@@ -88,7 +129,7 @@ impl App for MinesweeperApp {
 
                     let mut row = 0;
                     for (index, cell) in self.board.render().into_iter().enumerate() {
-                        let column = index % self.board.get_width_height();
+                        let column = index % self.board.get_width();
                         let stroke_width = (cell_width * 0.2).max(1.0);
                         let entire_thing_rect = Rect {
                             min: pos2(cell_width.mul_add(column as f32, start_x), start_y),
@@ -145,7 +186,7 @@ impl App for MinesweeperApp {
                             self.board.toggle_flag(pos);
                         }
 
-                        if column == self.board.get_width_height() - 1 {
+                        if column == self.board.get_width() - 1 {
                             start_y += cell_width;
                             row += 1;
                         }
@@ -158,5 +199,10 @@ impl App for MinesweeperApp {
                 self.board_rect = inner_rect;
             }
         });
+    }
+
+    fn save(&mut self, storage: &mut dyn Storage) {
+        let data = String::from(self.board.get_data().clone());
+        storage.set_string("data", data);
     }
 }

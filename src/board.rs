@@ -1,16 +1,34 @@
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use std::collections::HashSet;
+use std::default::Default;
 
 pub struct Board {
-    width: usize,
-    number_of_mines: usize,
     losing_mine_clicked_on: Option<(usize, usize)>,
     has_given_up: bool,
-    flagged: HashSet<(usize, usize)>,
-    clicked: HashSet<(usize, usize)>,
-    mines: HashSet<(usize, usize)>,
+    data: Data,
     rng: ThreadRng,
+}
+
+#[derive(Clone)]
+pub struct Data {
+    pub width: usize,
+    pub number_of_mines: usize,
+    pub flagged: HashSet<(usize, usize)>,
+    pub clicked: HashSet<(usize, usize)>,
+    pub mines: HashSet<(usize, usize)>,
+}
+
+impl Data {
+    pub fn new (width: usize, number_of_mines: usize) -> Self {
+        Self {
+            width,
+            number_of_mines,
+            flagged: HashSet::new(),
+            clicked: HashSet::new(),
+            mines: HashSet::new()
+        }
+    }
 }
 
 impl Board {
@@ -20,58 +38,69 @@ impl Board {
         }
 
         Some(Self {
-            width,
-            number_of_mines,
             losing_mine_clicked_on: None,
             has_given_up: false,
-            flagged: HashSet::new(),
-            mines: HashSet::new(),
-            clicked: HashSet::new(),
+            data: Data::new(width, number_of_mines),
             rng: ThreadRng::default(),
         })
     }
 
-    pub fn reset(&mut self, new_mines: Option<usize>, new_width: Option<usize>) {
-        self.flagged = HashSet::new();
-        self.mines = HashSet::new();
-        self.clicked = HashSet::new();
+    pub fn from_previous_data (data: Data) -> Self {
+        let mut losing_mine_clicked_on = None;
+
+        for mine in &data.mines {
+            if data.clicked.contains(mine) {
+                losing_mine_clicked_on = Some(*mine);
+                break;
+            }
+        }
+
+        Self {
+            losing_mine_clicked_on,
+            has_given_up: false,
+            data,
+            rng: ThreadRng::default()
+        }
+    }
+
+    pub fn reset(&mut self, new_mines_width: Option<(usize, usize)>) {
         self.losing_mine_clicked_on = None;
         self.has_given_up = false;
 
-        if let Some(new_mines) = new_mines {
-            self.number_of_mines = new_mines;
-        }
-        if let Some(new_width) = new_width {
-            self.width = new_width;
-        }
+        let (new_width, new_mines) = new_mines_width.unwrap_or((self.data.width, self.data.number_of_mines));
+        self.data = Data::new(new_width, new_mines);
     }
 
-    pub const fn get_width_height(&self) -> usize {
-        self.width
+    pub const fn get_width(&self) -> usize {
+        self.data.width
     }
 
     pub const fn total_mines(&self) -> usize {
-        self.number_of_mines
+        self.data.number_of_mines
     }
 
     pub fn flags_placed(&self) -> usize {
-        self.flagged.len()
+        self.data.flagged.len()
     }
 
     pub fn successfully_flagged (&self) -> usize {
-        self.flagged.intersection(&self.mines).count()
+        self.data.flagged.intersection(&self.data.mines).count()
     }
 
     pub fn give_up(&mut self) {
         self.has_given_up = true;
     }
 
+    pub fn get_data (&self) -> &Data {
+        &self.data
+    }
+
     const fn index_to_coords(&self, idx: usize) -> (usize, usize) {
-        (idx / self.width, idx % self.width)
+        (idx / self.data.width, idx % self.data.width)
     }
 
     const fn coords_to_index(&self, (x, y): (usize, usize)) -> usize {
-        y * self.width + x
+        y * self.data.width + x
     }
 
     pub fn toggle_flag(&mut self, pos: (usize, usize)) {
@@ -79,10 +108,10 @@ impl Board {
             return;
         }
 
-        if self.flagged.contains(&pos) {
-            self.flagged.remove(&pos);
-        } else if self.flagged.len() < self.mines.len(){
-            self.flagged.insert(pos);
+        if self.data.flagged.contains(&pos) {
+            self.data.flagged.remove(&pos);
+        } else if self.data.flagged.len() < self.data.mines.len(){
+            self.data.flagged.insert(pos);
         }
     }
 
@@ -113,18 +142,18 @@ impl Board {
             return true;
         }
 
-        self.clicked.insert(pos);
+        self.data.clicked.insert(pos);
         let clicked_idx = self.coords_to_index(pos);
-        if self.mines.is_empty() {
-            let mut left_to_rx = self.number_of_mines;
+        if self.data.mines.is_empty() {
+            let mut left_to_rx = self.data.number_of_mines;
 
             loop {
-                let new_mine_candidate = self.rng.random_range(0..(self.width * self.width));
+                let new_mine_candidate = self.rng.random_range(0..(self.data.width * self.data.width));
                 if new_mine_candidate == clicked_idx {
                     continue;
                 }
 
-                self.mines.insert(self.index_to_coords(new_mine_candidate));
+                self.data.mines.insert(self.index_to_coords(new_mine_candidate));
 
                 left_to_rx -= 1;
                 if left_to_rx == 0 {
@@ -135,26 +164,26 @@ impl Board {
             return false;
         }
 
-        if self.mines.contains(&pos) {
+        if self.data.mines.contains(&pos) {
             self.losing_mine_clicked_on = Some(pos);
         } else {
-            let mut to_be_checked: Vec<_> = Self::get_neighbours(pos, self.width).collect();
+            let mut to_be_checked: Vec<_> = Self::get_neighbours(pos, self.data.width).collect();
             let mut to_be_ignored = HashSet::new();
 
             while let Some(neighbour) = to_be_checked.pop() {
-                if self.mines.contains(&neighbour)
-                    || self.clicked.contains(&neighbour)
-                    || self.flagged.contains(&neighbour)
+                if self.data.mines.contains(&neighbour)
+                    || self.data.clicked.contains(&neighbour)
+                    || self.data.flagged.contains(&neighbour)
                     || to_be_ignored.contains(&neighbour)
                 {
                     continue;
                 }
 
                 let neighbours_neighbours: Vec<_> =
-                    Self::get_neighbours(neighbour, self.width).collect();
+                    Self::get_neighbours(neighbour, self.data.width).collect();
                 let neighbours_neighbour_count = neighbours_neighbours
                     .iter()
-                    .filter(|x| self.mines.contains(x))
+                    .filter(|x| self.data.mines.contains(x))
                     .count() as u8;
 
                 if neighbours_neighbour_count > 0 {
@@ -171,35 +200,35 @@ impl Board {
     }
 
     pub fn render(&self) -> Vec<RenderedGridElement> {
-        let mut grid = Vec::with_capacity(self.width * self.width);
+        let mut grid = Vec::with_capacity(self.data.width * self.data.width);
 
-        for y in 0..self.width {
-            for x in 0..self.width {
+        for y in 0..self.data.width {
+            for x in 0..self.data.width {
                 let pos = (x, y);
                 let ty = if self
                     .losing_mine_clicked_on
                     .is_some_and(|whoops| whoops == pos)
                 {
                     GridElementType::Exploded
-                } else if self.mines.contains(&pos) && self.game_has_been_lost() {
+                } else if self.data.mines.contains(&pos) && self.game_has_been_lost() {
                     GridElementType::Mine
-                } else if self.clicked.contains(&pos) {
+                } else if self.data.clicked.contains(&pos) {
                     GridElementType::Discovered
                 } else {
                     GridElementType::Undiscovered
                 };
 
-                let count = if ty == GridElementType::Undiscovered && !self.mines.contains(&pos)
+                let count = if ty == GridElementType::Undiscovered && !self.data.mines.contains(&pos)
                 {
                     let mut count = 0;
                     let mut neighbour_was_clicked = false;
 
-                    for ctc in Self::get_neighbours(pos, self.width) {
-                        if self.mines.contains(&ctc) {
+                    for ctc in Self::get_neighbours(pos, self.data.width) {
+                        if self.data.mines.contains(&ctc) {
                             count += 1;
                         }
 
-                        neighbour_was_clicked |= self.clicked.contains(&ctc);
+                        neighbour_was_clicked |= self.data.clicked.contains(&ctc);
                     }
                     neighbour_was_clicked &= ty != GridElementType::Discovered;
 
@@ -210,7 +239,7 @@ impl Board {
 
                 grid.push(RenderedGridElement {
                     ty,
-                    flagged: self.flagged.contains(&pos),
+                    flagged: self.data.flagged.contains(&pos),
                     count,
                 });
             }
@@ -220,7 +249,7 @@ impl Board {
     }
 
     pub fn game_has_been_won(&self) -> bool {
-        !self.game_has_been_lost() && !self.mines.is_empty() && self.flagged == self.mines
+        !self.game_has_been_lost() && !self.data.mines.is_empty() && self.data.flagged == self.data.mines
     }
 
     pub const fn game_has_been_lost(&self) -> bool {
