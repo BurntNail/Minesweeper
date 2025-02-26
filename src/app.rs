@@ -93,43 +93,29 @@ impl TryFrom<String> for Data {
 
         let [width, n_flagged, n_clicked, number_of_mines] = lengths;
 
-        if width == 0 || number_of_mines == 0 {
+        if width == 0 || number_of_mines == 0 || number_of_mines > (width * width - 1) {
             return Err(DataReadError::InvalidDataFound);
         }
 
-        let (mut flagged, mut clicked, mut mines) =
-            (HashSet::new(), HashSet::new(), HashSet::new());
-        //TODO: DRY
-        for _ in 0..number_of_mines {
-            let Some(y) = numbers.pop() else {
-                return Err(DataReadError::NotEnoughElements);
-            };
-            let Some(x) = numbers.pop() else {
-                return Err(DataReadError::NotEnoughElements);
-            };
+        let mut get_hashset = |count| {
+            let mut set = HashSet::new();
+            for _ in 0..count {
+                let Some(y) = numbers.pop() else {
+                    return Err(DataReadError::NotEnoughElements);
+                };
+                let Some(x) = numbers.pop() else {
+                    return Err(DataReadError::NotEnoughElements);
+                };
 
-            mines.insert((x, y));
-        }
-        for _ in 0..n_clicked {
-            let Some(y) = numbers.pop() else {
-                return Err(DataReadError::NotEnoughElements);
-            };
-            let Some(x) = numbers.pop() else {
-                return Err(DataReadError::NotEnoughElements);
-            };
+                set.insert((x, y));
+            }
 
-            clicked.insert((x, y));
-        }
-        for _ in 0..n_flagged {
-            let Some(y) = numbers.pop() else {
-                return Err(DataReadError::NotEnoughElements);
-            };
-            let Some(x) = numbers.pop() else {
-                return Err(DataReadError::NotEnoughElements);
-            };
+            Ok(set)
+        };
 
-            flagged.insert((x, y));
-        }
+        let mines = get_hashset(number_of_mines)?;
+        let clicked = get_hashset(n_clicked)?;
+        let flagged = get_hashset(n_flagged)?;
 
         Ok(Data {
             width,
