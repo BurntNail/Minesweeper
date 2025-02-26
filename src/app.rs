@@ -1,10 +1,11 @@
 use crate::board::{Board, GridElementType};
 use eframe::epaint::StrokeKind;
 use eframe::{App, Frame};
-use egui::{Align2, Color32, Context, FontId, Rect, Sense, Stroke, pos2, vec2, Grid, Slider, Widget, CursorIcon};
+use egui::{Align2, Color32, Context, FontId, Rect, Sense, Stroke, pos2, vec2, Grid, Slider, Widget, CursorIcon, Scene};
 
 pub struct MinesweeperApp {
     board: Board,
+    board_rect: Rect,
     next_width: usize,
     next_mines: usize,
 }
@@ -14,7 +15,8 @@ impl MinesweeperApp {
         Board::new(width, number_of_mines).map(|board| {
             Self { board,
                 next_width: width,
-                next_mines: number_of_mines
+                next_mines: number_of_mines,
+                board_rect: Rect::ZERO
             }
         })
     }
@@ -66,82 +68,94 @@ impl App for MinesweeperApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let available_space = ui.available_rect_before_wrap();
+            let mut inner_rect = Rect::ZERO;
 
-            let width_to_be_used = available_space.width().min(available_space.height()) * 0.95;
-            let cell_width = width_to_be_used / self.board.get_width_height() as f32;
+            let rsp = Scene::new()
+                // .zoom_range(1.0..=5.0)
+                .show(ui, &mut self.board_rect, |ui| {
+                    let available_space = ui.available_rect_before_wrap();
 
-            let flag_cell_width = cell_width * 0.5;
-            let flag_cell_delta_pos = (cell_width - flag_cell_width) / 2.0;
+                    let width_to_be_used = available_space.width().min(available_space.height()) * 0.95;
+                    let cell_width = width_to_be_used / self.board.get_width_height() as f32;
 
-            let start_x =
-                available_space.left() + (available_space.width() - width_to_be_used) / 2.0;
-            let mut start_y =
-                available_space.top() + (available_space.height() - width_to_be_used) / 2.0;
+                    let flag_cell_width = cell_width * 0.5;
+                    let flag_cell_delta_pos = (cell_width - flag_cell_width) / 2.0;
 
-            let mut row = 0;
-            for (index, cell) in self.board.render().into_iter().enumerate() {
-                let column = index % self.board.get_width_height();
-                let stroke_width = (cell_width * 0.2).max(1.0);
-                let entire_thing_rect = Rect {
-                    min: pos2(cell_width.mul_add(column as f32, start_x), start_y),
-                    max: pos2(
-                        cell_width.mul_add((column + 1) as f32, start_x),
-                        start_y + cell_width,
-                    ),
-                };
+                    let start_x =
+                        available_space.left() + (available_space.width() - width_to_be_used) / 2.0;
+                    let mut start_y =
+                        available_space.top() + (available_space.height() - width_to_be_used) / 2.0;
 
-                let colour = match cell.ty {
-                    GridElementType::Discovered => Color32::DARK_GRAY,
-                    GridElementType::Exploded => Color32::RED,
-                    GridElementType::Mine => Color32::PURPLE,
-                    GridElementType::Undiscovered => Color32::WHITE,
-                };
+                    let mut row = 0;
+                    for (index, cell) in self.board.render().into_iter().enumerate() {
+                        let column = index % self.board.get_width_height();
+                        let stroke_width = (cell_width * 0.2).max(1.0);
+                        let entire_thing_rect = Rect {
+                            min: pos2(cell_width.mul_add(column as f32, start_x), start_y),
+                            max: pos2(
+                                cell_width.mul_add((column + 1) as f32, start_x),
+                                start_y + cell_width,
+                            ),
+                        };
 
-                ui.painter().rect(
-                    entire_thing_rect,
-                    0.0,
-                    colour,
-                    Stroke::new((cell_width * 0.2).max(1.0), Color32::GRAY),
-                    StrokeKind::Middle,
-                );
-                if cell.flagged {
-                    let min = entire_thing_rect.min + vec2(flag_cell_delta_pos, flag_cell_delta_pos);
-                    let rect = Rect {
-                        min,
-                        max: min + vec2(flag_cell_width, flag_cell_width),
-                    };
-                    ui.painter().rect_filled(rect, 0.0, Color32::BLUE);
-                }
-                if let Some(count) = cell.count {
-                    ui.painter().text(
-                        pos2(entire_thing_rect.min.x + cell_width / 2.0, entire_thing_rect.min.y + cell_width / 2.0),
-                        Align2::CENTER_CENTER,
-                        count.to_string(),
-                        FontId::monospace(cell_width / 4.0 * 3.0),
-                        Color32::BLACK,
-                    );
-                }
+                        let colour = match cell.ty {
+                            GridElementType::Discovered => Color32::DARK_GRAY,
+                            GridElementType::Exploded => Color32::RED,
+                            GridElementType::Mine => Color32::PURPLE,
+                            GridElementType::Undiscovered => Color32::WHITE,
+                        };
 
-                let rsp = ui.allocate_rect({
-                    let delta = stroke_width;
-                       Rect {
-                           min: entire_thing_rect.min + vec2(delta, delta),
-                           max: entire_thing_rect.max - vec2(delta, delta),
-                       }
-                   }, Sense::CLICK).on_hover_cursor(CursorIcon::PointingHand);
+                        ui.painter().rect(
+                            entire_thing_rect,
+                            0.0,
+                            colour,
+                            Stroke::new((cell_width * 0.2).max(1.0), Color32::GRAY),
+                            StrokeKind::Middle,
+                        );
+                        if cell.flagged {
+                            let min = entire_thing_rect.min + vec2(flag_cell_delta_pos, flag_cell_delta_pos);
+                            let rect = Rect {
+                                min,
+                                max: min + vec2(flag_cell_width, flag_cell_width),
+                            };
+                            ui.painter().rect_filled(rect, 0.0, Color32::BLUE);
+                        }
+                        if let Some(count) = cell.count {
+                            ui.painter().text(
+                                pos2(entire_thing_rect.min.x + cell_width / 2.0, entire_thing_rect.min.y + cell_width / 2.0),
+                                Align2::CENTER_CENTER,
+                                count.to_string(),
+                                FontId::monospace(cell_width / 4.0 * 3.0),
+                                Color32::BLACK,
+                            );
+                        }
 
-                let pos = (column, row);
-                if rsp.clicked() {
-                    self.board.click(pos);
-                } else if rsp.secondary_clicked() {
-                    self.board.toggle_flag(pos);
-                }
+                        let rsp = ui.allocate_rect({
+                                                       let delta = stroke_width;
+                                                       Rect {
+                                                           min: entire_thing_rect.min + vec2(delta, delta),
+                                                           max: entire_thing_rect.max - vec2(delta, delta),
+                                                       }
+                                                   }, Sense::CLICK).on_hover_cursor(CursorIcon::PointingHand);
 
-                if column == self.board.get_width_height() - 1 {
-                    start_y += cell_width;
-                    row += 1;
-                }
+                        let pos = (column, row);
+                        if rsp.clicked() {
+                            self.board.click(pos);
+                        } else if rsp.secondary_clicked() {
+                            self.board.toggle_flag(pos);
+                        }
+
+                        if column == self.board.get_width_height() - 1 {
+                            start_y += cell_width;
+                            row += 1;
+                        }
+                    }
+
+                    inner_rect = ui.min_rect();
+                });
+
+            if rsp.response.double_clicked() {
+                self.board_rect = inner_rect;
             }
         });
     }
