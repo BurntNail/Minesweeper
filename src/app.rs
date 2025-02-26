@@ -1,7 +1,10 @@
+use std::fmt::{Display, Formatter};
+use std::num::{ParseIntError};
 use crate::board::{Board, Data, GridElementType};
 use eframe::epaint::StrokeKind;
 use eframe::{App, CreationContext, Frame, Storage};
 use egui::{Align2, Color32, Context, FontId, Rect, Sense, Stroke, pos2, vec2, Grid, Slider, Widget, CursorIcon, Scene};
+use std::collections::HashSet;
 
 pub struct MinesweeperApp {
     board: Board,
@@ -10,18 +13,126 @@ pub struct MinesweeperApp {
     next_mines: usize,
 }
 
+#[derive(Debug)]
+pub enum DataReadError {
+    UnableToParseInteger(ParseIntError),
+    NotEnoughElements,
+    InvalidCharacter(char)
+}
+
+impl From<ParseIntError> for DataReadError {
+    fn from(value: ParseIntError) -> Self {
+        Self::UnableToParseInteger(value)
+    }
+}
+
+
+impl Display for DataReadError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DataReadError::UnableToParseInteger(e) => write!(f, "Error parsing integer: {e}"),
+            DataReadError::NotEnoughElements => write!(f, "Not enough elements compared to length counts provided"),
+            DataReadError::InvalidCharacter(ch) => write!(f, "Found non-integer, non-comma character: {ch:?}"),
+        }
+    }
+}
+
+impl std::error::Error for DataReadError {
+    fn cause(&self) -> Option<&dyn std::error::Error> {
+        if let DataReadError::UnableToParseInteger(e) = &self {
+            Some(e)
+        } else {
+            None
+        }
+    }
+}
 
 impl TryFrom<String> for Data {
-    type Error = ();
+    type Error = DataReadError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        todo!()
+        //i could do a big state machine, but i cba and this works well enough
+        let mut lengths = [0; 4];
+        let mut numbers = vec![];
+
+        let mut accum = String::new();
+
+        let mut i = 0;
+        for ch in value.chars() {
+            if ch.is_ascii_digit() {
+                accum.push(ch);
+            } else if ch == ',' {
+                let parsed = accum.parse()?;
+                accum.clear();
+
+                if i <= 3 {
+                    lengths[i] = parsed;
+                } else {
+                    numbers.push(parsed);
+                }
+
+                if i == 3 {
+                    numbers.reserve(lengths[1] + lengths[2] + lengths[3]);
+                }
+
+                i += 1;
+            }
+        }
+        numbers.push(accum.parse()?);
+
+        let [width, n_flagged, n_clicked, number_of_mines] = lengths;
+
+        let (mut flagged, mut clicked, mut mines) = (HashSet::new(), HashSet::new(), HashSet::new());
+        //TODO: DRY
+        for _ in 0..number_of_mines {
+            let Some(y) = numbers.pop() else {
+                return Err(DataReadError::NotEnoughElements);
+            };
+            let Some(x) = numbers.pop() else {
+                return Err(DataReadError::NotEnoughElements);
+            };
+
+            mines.insert((x, y));
+        }
+        for _ in 0..n_clicked {
+            let Some(y) = numbers.pop() else {
+                return Err(DataReadError::NotEnoughElements);
+            };
+            let Some(x) = numbers.pop() else {
+                return Err(DataReadError::NotEnoughElements);
+            };
+
+            clicked.insert((x, y));
+        }
+        for _ in 0..n_flagged {
+            let Some(y) = numbers.pop() else {
+                return Err(DataReadError::NotEnoughElements);
+            };
+            let Some(x) = numbers.pop() else {
+                return Err(DataReadError::NotEnoughElements);
+            };
+
+            flagged.insert((x, y));
+        }
+
+
+        Ok(Data {
+            width,
+            number_of_mines,
+            flagged,
+            clicked,
+            mines
+        })
     }
 }
 
 impl From<Data> for String {
-    fn from(value: Data) -> Self {
-        todo!()
+    fn from(Data{ width, number_of_mines: _, flagged, clicked, mines }: Data) -> Self {
+        let mut output = format!("{width},{},{},{}", flagged.len(), clicked.len(), mines.len());
+        for (x, y) in flagged.into_iter().chain(clicked).chain(mines.into_iter()) {
+            output.push_str(&format!(",{x},{y}"));
+        }
+        output
     }
 }
 
