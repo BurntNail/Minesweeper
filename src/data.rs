@@ -230,7 +230,9 @@ impl Data {
         }
         self.flagged.remove(&pos);
 
-        for neighbour in self.get_neighbours(pos, true) {
+        let mut neighbours_to_check: Vec<_> = self.get_neighbours(pos, true).collect();
+
+        while let Some(neighbour) = neighbours_to_check.pop() {
             if self.mines.contains(&neighbour) //can't click on a mine lol
                 || self.clicked.contains(&neighbour) //can't re-click
                 || self.flagged.contains(&neighbour) //shouldn't click on a flagged one
@@ -238,19 +240,13 @@ impl Data {
                 continue;
             }
 
-            let neighbour_count = self.get_neighbours(neighbour, true).filter(|x| self.mines.contains(x)).count();
-
-            match neighbour_count {
-                0 => {
-                    //if it has zero neighbours, simulate a 'click'
-                    self.click(neighbour, rng);
-                },
-                _ => {
-                    //if not, then just mark it as discovered
-                    self.clicked.insert(neighbour);
-                }
+            let neighbours: Vec<_> = self.get_neighbours(neighbour, true).collect();
+            let has_a_bomb_nearby = neighbours.iter().any(|x| self.mines.contains(x));
+            if !has_a_bomb_nearby {
+                neighbours_to_check.extend(neighbours);
             }
 
+            self.clicked.insert(neighbour);
         }
 
         false
