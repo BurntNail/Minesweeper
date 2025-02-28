@@ -9,13 +9,15 @@ mod board;
 mod data;
 
 fn main() {
+    //sensible defaults for first time running
     let size = 25;
     let number_of_mines = 50;
 
+    //don't need to change any of the native options
     let options = NativeOptions::default();
 
     eframe::run_native(
-        "Minesweeper EGUI",
+        "Minesweeper",
         options,
         Box::new(|cc| {
             Ok(Box::new(

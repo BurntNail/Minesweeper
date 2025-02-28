@@ -1,6 +1,7 @@
 use rand::rngs::ThreadRng;
 use std::collections::HashSet;
 use std::default::Default;
+use std::fmt::{Display, Formatter};
 use std::ops::BitXor;
 use crate::data::Data;
 
@@ -22,25 +23,62 @@ impl Data {
     }
 }
 
-impl Board {
-    pub fn new(width: usize, number_of_mines: usize) -> Option<Self> {
-        if width <= 1 || number_of_mines == 0 || number_of_mines > (width * width) {
-            return None;
+#[derive(Copy, Clone, Debug)]
+pub enum BoardCreationError {
+    TooSmallWidth,
+    ZeroMines,
+    TooManyMines,
+}
+
+impl Display for BoardCreationError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ZeroMines => write!(f, "Found board with zero mines"),
+            Self::TooSmallWidth => write!(f, "Found board 1 or less width"),
+            Self::TooManyMines => write!(f, "Found board with more mines than allowed mine spaces")
+        }
+    }
+}
+
+impl TryFrom<Data> for Board {
+    type Error = BoardCreationError;
+
+    fn try_from(data: Data) -> Result<Self, Self::Error> {
+        if data.width <= 1 {
+            return Err(BoardCreationError::TooSmallWidth);
+        } else if data.number_of_mines == 0 {
+            return Err(BoardCreationError::ZeroMines);
+        } else if data.number_of_mines > (data.width * data.width - 1) {
+            return Err(BoardCreationError::TooManyMines);
         }
 
-        Some(Self {
+        Ok(Self {
+            has_given_up: false,
+            data,
+            rng: ThreadRng::default(),
+        })
+    }
+}
+
+impl Board {
+    pub fn new(width: usize, number_of_mines: usize) -> Result<Self, BoardCreationError> {
+        if width <= 1 {
+            return Err(BoardCreationError::TooSmallWidth);
+        } else if number_of_mines == 0 {
+            return Err(BoardCreationError::ZeroMines);
+        } else if number_of_mines > (width * width - 1) {
+            return Err(BoardCreationError::TooManyMines);
+        }
+
+        Ok(Self {
             has_given_up: false,
             data: Data::new(width, number_of_mines),
             rng: ThreadRng::default(),
         })
     }
 
-    pub fn from_previous_data(data: Data) -> Self {
-        Self {
-            has_given_up: false,
-            data,
-            rng: ThreadRng::default(),
-        }
+    pub fn from_previous_data(data: Data) -> Result<Self, BoardCreationError> {
+        Self::try_from(data)
     }
 
     pub fn reset(&mut self, new_mines_width: Option<(usize, usize)>) {

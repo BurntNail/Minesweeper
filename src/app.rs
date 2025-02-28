@@ -1,4 +1,4 @@
-use crate::board::{Board, GridElementType};
+use crate::board::{Board, BoardCreationError, GridElementType};
 use eframe::epaint::StrokeKind;
 use eframe::{App, CreationContext, Frame, Storage};
 use egui::{
@@ -6,47 +6,57 @@ use egui::{
     pos2, vec2,
 };
 use std::time::{Duration, Instant};
+use crate::data::Data;
 
+///Struct to keep a hold of all things related to the minesweeper UI/app
 pub struct MinesweeperApp {
+    ///The actual minesweeper board
     board: Board,
+    ///When the game started - can be [`None`] if nothing has been placed yet
     game_started: Option<Instant>,
+    ///When the game finished - will be [`None`] until the game finishes.
     game_stopped: Option<Instant>,
+    ///The [`Rect`] used to draw the board - this is used for the [`Scene`] that allows pan/zoom-ing.
     board_rect: Rect,
+    ///The width of the next board to be created
     next_width: usize,
+    ///The number of mines in the next board to be created
     next_mines: usize,
 }
 
 impl MinesweeperApp {
-    pub fn new(width: usize, number_of_mines: usize, cc: &CreationContext) -> Option<Self> {
+    pub fn new(width: usize, number_of_mines: usize, cc: &CreationContext) -> Result<Self, BoardCreationError> {
+        //assume we can't get any previous data
         let mut previous_data = None;
 
+        //but if we can get a data key
         if let Some(data) = cc.storage.and_then(|x| x.get_string("data")) {
-            match data.try_into() {
+            //and we can parse it
+            match Data::try_from(data) {
+                //then now we have the previous data
                 Ok(x) => previous_data = Some(x),
                 Err(e) => {
+                    //if not, then we can leave `previous_data` as is, and just print an error with why it failed
                     eprintln!("Error parsing previous data: {e:?}");
                 }
             }
         }
 
-        previous_data.map_or_else(|| Board::new(width, number_of_mines).map(|board| Self {
-                board,
-                next_width: width,
-                next_mines: number_of_mines,
-                board_rect: Rect::ZERO,
-                game_started: None,
-                game_stopped: None,
-            }), |x| {
-                let board = Board::from_previous_data(x);
-                Some(Self {
-                    next_width: board.get_width(),
-                    next_mines: board.total_mines(),
-                    board,
-                    board_rect: Rect::ZERO,
-                    game_started: None,
-                    game_stopped: None,
-                })
-            })
+        //then we use that to either create a board with the previous data, or we just use the defaults
+        //both of the Board creation methods return Results which avoid logic errors
+        let board = previous_data.map_or_else(
+            || Board::new(width, number_of_mines),
+            |data| Board::from_previous_data(data)
+        )?;
+
+        Ok(Self {
+            next_width: board.get_width(),
+            next_mines: board.total_mines(),
+            board,
+            board_rect: Rect::ZERO,
+            game_started: None,
+            game_stopped: None,
+        })
     }
 }
 

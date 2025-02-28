@@ -229,27 +229,27 @@ impl Data {
         if self.mines.contains(&pos) {
             return true;
         }
+        self.flagged.remove(&pos);
 
-        let only_diagonals = Self::get_neighbours(pos, self.width, true).filter(|x| self.mines.contains(x)).count() == 0;
-
-        let mut to_be_checked: Vec<_> = Self::get_neighbours(pos, self.width, only_diagonals).collect();
+        let mut to_be_checked: Vec<_> = Self::get_neighbours(pos, self.width, true).collect();
 
         while let Some(candidate) = to_be_checked.pop() {
-            if self.mines.contains(&candidate)
-                || self.clicked.contains(&candidate)
-                || self.flagged.contains(&candidate)
+            if self.mines.contains(&candidate) //can't click on a mine lol
+                || self.clicked.contains(&candidate) //can't re-click
+                || self.flagged.contains(&candidate) //shouldn't click on a flagged one
             {
                 continue;
             }
 
-            let candidate_neighbours: Vec<_> = Self::get_neighbours(candidate, self.width, true).collect();
-            let neighbour_count = candidate_neighbours.iter().filter(|x| self.mines.contains(x)).count() as u8;
+            let neighbour_count = Self::get_neighbours(candidate, self.width, true).filter(|x| self.mines.contains(x)).count();
+
             match neighbour_count {
                 0 => {
-                    to_be_checked.extend(candidate_neighbours);
+                    //if it has zero neighbours, simulate a 'click'
                     self.click(candidate, rng);
                 },
                 _ => {
+                    //if not, then just mark it as discovered
                     self.clicked.insert(candidate);
                 }
             }
