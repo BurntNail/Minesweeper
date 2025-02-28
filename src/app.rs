@@ -22,6 +22,7 @@ pub struct MinesweeperApp {
     next_width: usize,
     ///The number of mines in the next board to be created
     next_mines: usize,
+    cached_counts: Vec<u8>,
 }
 
 impl MinesweeperApp {
@@ -42,6 +43,7 @@ impl MinesweeperApp {
             }
         }
 
+
         //then we use that to either create a board with the previous data, or we just use the defaults
         //both of the Board creation methods return Results which avoid logic errors
         let board = previous_data.map_or_else(
@@ -52,10 +54,11 @@ impl MinesweeperApp {
         Ok(Self {
             next_width: board.get_width(),
             next_mines: board.total_mines(),
-            board,
             board_rect: Rect::ZERO,
             game_started: None,
             game_stopped: None,
+            cached_counts: board.generate_counts(),
+            board,
         })
     }
 }
@@ -94,15 +97,20 @@ impl App for MinesweeperApp {
                 {
                     ui.label(status);
 
+                    let mut reset_vars = false;
                     if ui.button("Give Up?").clicked() {
                         self.board.give_up();
-                        self.game_started = None;
-                        self.game_stopped = None;
+                        reset_vars = true;
                     }
                     if ui.button("Reset Game?").clicked() {
                         self.board.reset(Some((self.next_width, self.next_mines)));
+                        reset_vars = true;
+                    }
+
+                    if reset_vars {
                         self.game_started = None;
                         self.game_stopped = None;
+                        self.cached_counts.clear();
                     }
                 }
                 ui.end_row();
@@ -151,6 +159,15 @@ impl App for MinesweeperApp {
                         available_space.top() + (available_space.height() - width_to_be_used - stroke_width) / 2.0;
 
 
+                    let counts = {
+                        if self.cached_counts.is_empty() {
+                            self.cached_counts = self.board.generate_counts();
+                        }
+
+                        self.cached_counts.as_slice()
+                    };
+
+
                     let mut row = 0;
                     for (index, cell) in self.board.render().into_iter().enumerate() {
                         let column = index % self.board.get_width();
@@ -193,14 +210,14 @@ impl App for MinesweeperApp {
                             };
                             ui.painter().rect_filled(rect, 0.0, Color32::BLUE);
                         }
-                        if let Some(count) = cell.count {
+                        if cell.should_display_count {
                             ui.painter().text(
                                 pos2(
                                     entire_thing_rect.min.x + cell_width / 2.0,
                                     entire_thing_rect.min.y + cell_width / 2.0,
                                 ),
                                 Align2::CENTER_CENTER,
-                                count.to_string(),
+                                counts[index].to_string(),
                                 FontId::monospace(cell_width / 4.0 * 3.0),
                                 Color32::BLACK,
                             );

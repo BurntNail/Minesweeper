@@ -171,15 +171,15 @@ impl Data {
         }
     }
 
-    pub fn get_neighbours((x, y): (usize, usize), size: usize, include_diagonals: bool) -> impl Iterator<Item = (usize, usize)> {
+    pub fn get_neighbours(&self, (x, y): (usize, usize), include_diagonals: bool) -> impl Iterator<Item = (usize, usize)> + use<> {
         //0, 0 is top left
         let left = x.checked_sub(1);
         let horiz_middle = Some(x);
-        let right = if x < size { Some(x + 1) } else { None };
+        let right = if x < self.width { Some(x + 1) } else { None };
 
         let above = y.checked_sub(1);
         let vert_middle = Some(y);
-        let below = if y < size { Some(y + 1) } else { None };
+        let below = if y < self.width { Some(y + 1) } else { None };
 
         let optional = |neighbour| -> Option<(usize, usize)> {
             include_diagonals.then_some(neighbour).flatten()
@@ -188,7 +188,6 @@ impl Data {
 
         left.zip(vert_middle)
             .into_iter()
-            .chain(left.zip(vert_middle))
             .chain(right.zip(vert_middle))
             .chain(horiz_middle.zip(above))
             .chain(horiz_middle.zip(below))
@@ -231,31 +230,49 @@ impl Data {
         }
         self.flagged.remove(&pos);
 
-        let mut to_be_checked: Vec<_> = Self::get_neighbours(pos, self.width, true).collect();
-
-        while let Some(candidate) = to_be_checked.pop() {
-            if self.mines.contains(&candidate) //can't click on a mine lol
-                || self.clicked.contains(&candidate) //can't re-click
-                || self.flagged.contains(&candidate) //shouldn't click on a flagged one
+        for neighbour in self.get_neighbours(pos, true) {
+            if self.mines.contains(&neighbour) //can't click on a mine lol
+                || self.clicked.contains(&neighbour) //can't re-click
+                || self.flagged.contains(&neighbour) //shouldn't click on a flagged one
             {
                 continue;
             }
 
-            let neighbour_count = Self::get_neighbours(candidate, self.width, true).filter(|x| self.mines.contains(x)).count();
+            let neighbour_count = self.get_neighbours(neighbour, true).filter(|x| self.mines.contains(x)).count();
 
             match neighbour_count {
                 0 => {
                     //if it has zero neighbours, simulate a 'click'
-                    self.click(candidate, rng);
+                    self.click(neighbour, rng);
                 },
                 _ => {
                     //if not, then just mark it as discovered
-                    self.clicked.insert(candidate);
+                    self.clicked.insert(neighbour);
                 }
             }
 
         }
 
         false
+    }
+
+    pub fn generate_counts (&self) -> Vec<u8> {
+        if self.mines.is_empty() {
+            return vec![];
+        }
+        let mut counts = Vec::with_capacity(self.width * self.width);
+
+        for row in 0..self.width {
+            for col in 0..self.width {
+                let pos = (col, row);
+
+                let count = self.get_neighbours(pos, true)
+                    .filter(|pos| self.mines.contains(pos))
+                    .count() as u8;
+                counts.push(count);
+            }
+        }
+
+        counts
     }
 }

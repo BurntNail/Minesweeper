@@ -147,27 +147,15 @@ impl Board {
                     GridElementType::Undiscovered
                 };
 
-                let count = if ty == GridElementType::Discovered {
-                    let mut count = 0;
-                    let mut neighbour_was_clicked = true;
 
-                    for neighbour in Data::get_neighbours(pos, self.data.width, true) {
-                        if self.data.mines.contains(&neighbour) {
-                            count += 1;
-                        }
-
-                        neighbour_was_clicked &= self.data.clicked.contains(&neighbour);
-                    }
-
-                    (!neighbour_was_clicked && count > 0).then_some(count)
-                } else {
-                    None
-                };
+                let should_display_count =
+                    ty == GridElementType::Discovered
+                        && self.data.get_neighbours(pos, true).any(|neighbour| !self.data.clicked.contains(&neighbour));
 
                 grid.push(RenderedGridElement {
                     ty,
                     flagged: self.data.flagged.contains(&pos),
-                    count,
+                    should_display_count,
                 });
             }
         }
@@ -201,12 +189,16 @@ impl Board {
     pub fn game_has_been_lost(&self) -> bool {
         self.has_given_up || self.data.mines.intersection(&self.data.clicked).next().is_some()
     }
+
+    pub fn generate_counts (&self) -> Vec<u8> {
+        self.data.generate_counts()
+    }
 }
 
 pub struct RenderedGridElement {
     pub ty: GridElementType,
     pub flagged: bool,
-    pub count: Option<u8>,
+    pub should_display_count: bool,
 }
 
 #[derive(Eq, PartialEq)]
