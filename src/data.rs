@@ -240,9 +240,14 @@ impl Data {
                 continue;
             }
 
-            let neighbours: Vec<_> = self.get_neighbours(neighbour, true).collect();
+            let mut neighbours: Vec<_> = self.get_neighbours(neighbour, true).collect();
             let has_a_bomb_nearby = neighbours.iter().any(|x| self.mines.contains(x));
             if !has_a_bomb_nearby {
+                neighbours.retain(|candidate| {
+                    !self.clicked.contains(candidate)
+                        && !self.flagged.contains(candidate)
+                        && !neighbours_to_check.contains(candidate)
+                });
                 neighbours_to_check.extend(neighbours);
             }
 
