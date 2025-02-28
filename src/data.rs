@@ -254,7 +254,7 @@ impl Data {
             self.clicked.insert(neighbour);
         }
 
-        false
+        self.game_has_been_won()
     }
 
     pub fn generate_counts (&self) -> Vec<u8> {
@@ -275,5 +275,36 @@ impl Data {
         }
 
         counts
+    }
+
+    pub fn game_has_been_won(&self) -> bool {
+        let check_all_squares = || {
+            for x in 0..self.width {
+                for y in 0..self.width {
+                    let pos = (x, y);
+
+                    let is_flagged = self.flagged.contains(&pos);
+                    let is_mine = self.mines.contains(&pos);
+                    let is_discovered = self.clicked.contains(&pos);
+
+                    if
+                    (is_flagged && !is_mine)
+                        || (is_discovered && is_mine)
+                        || (!is_discovered && !is_mine) {
+                        return false;
+                    }
+                }
+            }
+
+            true
+        };
+
+        !self.game_has_been_lost()
+            && !self.mines.is_empty()
+            && check_all_squares()
+    }
+
+    pub fn game_has_been_lost (&self) -> bool {
+        self.mines.intersection(&self.clicked).next().is_some()
     }
 }

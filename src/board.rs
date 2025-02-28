@@ -2,7 +2,6 @@ use rand::rngs::ThreadRng;
 use std::collections::HashSet;
 use std::default::Default;
 use std::fmt::{Display, Formatter};
-use std::ops::BitXor;
 use crate::data::Data;
 
 pub struct Board {
@@ -117,7 +116,6 @@ impl Board {
         if self.game_has_been_won() || self.game_has_been_lost() || self.data.clicked.contains(&pos) {
             return;
         }
-
         self.data.toggle_flag(pos);
     }
 
@@ -164,30 +162,12 @@ impl Board {
     }
 
     pub fn game_has_been_won(&self) -> bool {
-        let check_all_squares = || {
-            for x in 0..self.data.width {
-                for y in 0..self.data.width {
-                    let pos = (x, y);
-
-                    let is_flagged_mine = self.data.mines.contains(&pos) && self.data.flagged.contains(&pos);
-                    let is_discovered = self.data.clicked.contains(&pos);
-
-                    if !is_flagged_mine.bitxor(is_discovered) {
-                        return false;
-                    }
-                }
-            }
-
-            true
-        };
-
         !self.game_has_been_lost()
-            && !self.data.mines.is_empty()
-            && check_all_squares()
+            && self.data.game_has_been_won()
     }
 
     pub fn game_has_been_lost(&self) -> bool {
-        self.has_given_up || self.data.mines.intersection(&self.data.clicked).next().is_some()
+        self.has_given_up || self.data.game_has_been_lost()
     }
 
     pub fn generate_counts (&self) -> Vec<u8> {

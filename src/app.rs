@@ -127,7 +127,7 @@ impl App for MinesweeperApp {
                 {
                     ui.label("Mines: ");
                     let max_mines = self.next_width * self.next_width - 1;
-                    Slider::new(&mut self.next_mines, self.next_width..=max_mines)
+                    Slider::new(&mut self.next_mines, 1..=max_mines)
                         .logarithmic(true)
                         .ui(ui);
 
@@ -247,6 +247,9 @@ impl App for MinesweeperApp {
                                 self.game_stopped = Some(Instant::now());
                             }
                         } else if rsp.secondary_clicked() {
+                            if self.game_started.is_none() {
+                                self.game_started = Some(Instant::now());
+                            }
                             self.board.toggle_flag(pos);
                         }
 
