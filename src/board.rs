@@ -1,8 +1,8 @@
+use crate::data::Data;
 use rand::rngs::ThreadRng;
 use std::collections::HashSet;
 use std::default::Default;
 use std::fmt::{Display, Formatter};
-use crate::data::Data;
 
 pub struct Board {
     has_given_up: bool,
@@ -34,7 +34,7 @@ impl Display for BoardCreationError {
         match self {
             Self::ZeroMines => write!(f, "Found board with zero mines"),
             Self::TooSmallWidth => write!(f, "Found board 1 or less width"),
-            Self::TooManyMines => write!(f, "Found board with more mines than allowed mine spaces")
+            Self::TooManyMines => write!(f, "Found board with more mines than allowed mine spaces"),
         }
     }
 }
@@ -113,7 +113,8 @@ impl Board {
     }
 
     pub fn toggle_flag(&mut self, pos: (usize, usize)) {
-        if self.game_has_been_won() || self.game_has_been_lost() || self.data.clicked.contains(&pos) {
+        if self.game_has_been_won() || self.game_has_been_lost() || self.data.clicked.contains(&pos)
+        {
             return;
         }
         self.data.toggle_flag(pos);
@@ -121,7 +122,7 @@ impl Board {
 
     ///returns whether game over has occured
     pub fn click(&mut self, pos: (usize, usize)) -> bool {
-        if self.game_has_been_won() || self.game_has_been_lost(){
+        if self.game_has_been_won() || self.game_has_been_lost() {
             return true;
         }
 
@@ -134,10 +135,11 @@ impl Board {
         for y in 0..self.data.width {
             for x in 0..self.data.width {
                 let pos = (x, y);
-                let ty = if self.data.mines.contains(&pos) && self.data.clicked.contains(&pos)
-                {
+                let ty = if self.data.mines.contains(&pos) && self.data.clicked.contains(&pos) {
                     GridElementType::Exploded
-                } else if self.data.mines.contains(&pos) && (self.game_has_been_lost() || self.game_has_been_won()) {
+                } else if self.data.mines.contains(&pos)
+                    && (self.game_has_been_lost() || self.game_has_been_won())
+                {
                     GridElementType::Mine
                 } else if self.data.clicked.contains(&pos) {
                     GridElementType::Discovered
@@ -145,10 +147,11 @@ impl Board {
                     GridElementType::Undiscovered
                 };
 
-
-                let should_display_count =
-                    ty == GridElementType::Discovered
-                        && self.data.get_neighbours(pos, true).any(|neighbour| !self.data.clicked.contains(&neighbour));
+                let should_display_count = ty == GridElementType::Discovered
+                    && self
+                        .data
+                        .get_neighbours(pos, true)
+                        .any(|neighbour| !self.data.clicked.contains(&neighbour));
 
                 grid.push(RenderedGridElement {
                     ty,
@@ -162,15 +165,14 @@ impl Board {
     }
 
     pub fn game_has_been_won(&self) -> bool {
-        !self.game_has_been_lost()
-            && self.data.game_has_been_won()
+        !self.game_has_been_lost() && self.data.game_has_been_won()
     }
 
     pub fn game_has_been_lost(&self) -> bool {
         self.has_given_up || self.data.game_has_been_lost()
     }
 
-    pub fn generate_counts (&self) -> Vec<u8> {
+    pub fn generate_counts(&self) -> Vec<u8> {
         self.data.generate_counts()
     }
 }

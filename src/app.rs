@@ -1,4 +1,5 @@
 use crate::board::{Board, BoardCreationError, GridElementType};
+use crate::data::Data;
 use eframe::epaint::StrokeKind;
 use eframe::{App, CreationContext, Frame, Storage};
 use egui::{
@@ -6,7 +7,6 @@ use egui::{
     pos2, vec2,
 };
 use std::time::{Duration, Instant};
-use crate::data::Data;
 
 ///Struct to keep a hold of all things related to the minesweeper UI/app
 pub struct MinesweeperApp {
@@ -26,7 +26,11 @@ pub struct MinesweeperApp {
 }
 
 impl MinesweeperApp {
-    pub fn new(width: usize, number_of_mines: usize, cc: &CreationContext) -> Result<Self, BoardCreationError> {
+    pub fn new(
+        width: usize,
+        number_of_mines: usize,
+        cc: &CreationContext,
+    ) -> Result<Self, BoardCreationError> {
         //assume we can't get any previous data
         let mut previous_data = None;
 
@@ -43,12 +47,11 @@ impl MinesweeperApp {
             }
         }
 
-
         //then we use that to either create a board with the previous data, or we just use the defaults
         //both of the Board creation methods return Results which avoid logic errors
         let board = previous_data.map_or_else(
             || Board::new(width, number_of_mines),
-            |data| Board::from_previous_data(data)
+            Board::from_previous_data,
         )?;
 
         Ok(Self {
@@ -87,9 +90,9 @@ impl App for MinesweeperApp {
                 }),
                 _ => format!("Game in progress for {}s", {
                     self.game_started.map_or(0, |start| {
-                            ctx.request_repaint_after_secs(1.0);
-                            start.elapsed().as_secs()
-                        })
+                        ctx.request_repaint_after_secs(1.0);
+                        start.elapsed().as_secs()
+                    })
                 }),
             };
 
@@ -97,6 +100,7 @@ impl App for MinesweeperApp {
                 {
                     ui.label(status);
 
+                    #[allow(clippy::useless_let_if_seq)]
                     let mut reset_vars = false;
                     if ui.button("Give Up?").clicked() {
                         self.board.give_up();
@@ -153,11 +157,10 @@ impl App for MinesweeperApp {
                     let flag_cell_width = cell_width * 0.5;
                     let flag_cell_delta_pos = (cell_width - flag_cell_width) / 2.0;
 
-                    let start_x =
-                        available_space.left() + (available_space.width() - width_to_be_used - stroke_width) / 2.0;
-                    let mut start_y =
-                        available_space.top() + (available_space.height() - width_to_be_used - stroke_width) / 2.0;
-
+                    let start_x = available_space.left()
+                        + (available_space.width() - width_to_be_used - stroke_width) / 2.0;
+                    let mut start_y = available_space.top()
+                        + (available_space.height() - width_to_be_used - stroke_width) / 2.0;
 
                     let counts = {
                         if self.cached_counts.is_empty() {
@@ -167,16 +170,12 @@ impl App for MinesweeperApp {
                         self.cached_counts.as_slice()
                     };
 
-
                     let mut row = 0;
                     for (index, cell) in self.board.render().into_iter().enumerate() {
                         let column = index % self.board.get_width();
 
                         let entire_thing_rect = Rect {
-                            min: pos2(
-                                cell_width.mul_add(column as f32, start_x),
-                                start_y
-                            ),
+                            min: pos2(cell_width.mul_add(column as f32, start_x), start_y),
                             max: pos2(
                                 cell_width.mul_add((column + 1) as f32, start_x),
                                 start_y + cell_width,
@@ -186,11 +185,13 @@ impl App for MinesweeperApp {
                         let colour = match cell.ty {
                             GridElementType::Discovered => Color32::DARK_GRAY,
                             GridElementType::Exploded => Color32::RED,
-                            GridElementType::Mine => if self.board.game_has_been_won() {
-                                Color32::GREEN
-                            } else {
-                                Color32::PURPLE
-                            },
+                            GridElementType::Mine => {
+                                if self.board.game_has_been_won() {
+                                    Color32::GREEN
+                                } else {
+                                    Color32::PURPLE
+                                }
+                            }
                             GridElementType::Undiscovered => Color32::WHITE,
                         };
 

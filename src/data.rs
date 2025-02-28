@@ -1,7 +1,7 @@
+use rand::Rng;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::num::ParseIntError;
-use rand::Rng;
 
 #[derive(Clone)]
 pub struct Data {
@@ -98,7 +98,6 @@ impl TryFrom<String> for Data {
         }
         numbers.push(accum.parse()?);
 
-
         let mut get_hashset = |count| {
             let mut set = HashSet::new();
             for _ in 0..count {
@@ -152,7 +151,6 @@ impl From<Data> for String {
     }
 }
 
-
 impl Data {
     const fn index_to_coords(&self, idx: usize) -> (usize, usize) {
         (idx / self.width, idx % self.width)
@@ -163,7 +161,7 @@ impl Data {
         y * self.width + x
     }
 
-    pub fn toggle_flag (&mut self, pos: (usize, usize)) {
+    pub fn toggle_flag(&mut self, pos: (usize, usize)) {
         if self.flagged.contains(&pos) {
             self.flagged.remove(&pos);
         } else if self.flagged.len() < self.mines.len() {
@@ -171,7 +169,11 @@ impl Data {
         }
     }
 
-    pub fn get_neighbours(&self, (x, y): (usize, usize), include_diagonals: bool) -> impl Iterator<Item = (usize, usize)> + use<> {
+    pub fn get_neighbours(
+        &self,
+        (x, y): (usize, usize),
+        include_diagonals: bool,
+    ) -> impl Iterator<Item = (usize, usize)> + use<> {
         //0, 0 is top left
         let left = x.checked_sub(1);
         let horiz_middle = Some(x);
@@ -185,7 +187,6 @@ impl Data {
             include_diagonals.then_some(neighbour).flatten()
         };
 
-
         left.zip(vert_middle)
             .into_iter()
             .chain(right.zip(vert_middle))
@@ -197,21 +198,18 @@ impl Data {
             .chain(optional(right.zip(below)))
     }
 
-    pub fn click (&mut self, pos: (usize, usize), rng: &mut impl Rng) -> bool {
+    pub fn click(&mut self, pos: (usize, usize), rng: &mut impl Rng) -> bool {
         if self.mines.is_empty() {
             let mut left_to_place = self.number_of_mines;
 
             loop {
-                let new_mine_candidate = rng
-                    .random_range(0..(self.width * self.width));
+                let new_mine_candidate = rng.random_range(0..(self.width * self.width));
                 let new_mine_candidate = self.index_to_coords(new_mine_candidate);
                 if new_mine_candidate == pos || self.mines.contains(&new_mine_candidate) {
                     continue;
                 }
 
-                self
-                    .mines
-                    .insert(new_mine_candidate);
+                self.mines.insert(new_mine_candidate);
 
                 left_to_place -= 1;
                 if left_to_place == 0 {
@@ -235,7 +233,8 @@ impl Data {
         while let Some(neighbour) = neighbours_to_check.pop() {
             if self.mines.contains(&neighbour) //can't click on a mine lol
                 || self.clicked.contains(&neighbour) //can't re-click
-                || self.flagged.contains(&neighbour) //shouldn't click on a flagged one
+                || self.flagged.contains(&neighbour)
+            //shouldn't click on a flagged one
             {
                 continue;
             }
@@ -257,7 +256,7 @@ impl Data {
         self.game_has_been_won()
     }
 
-    pub fn generate_counts (&self) -> Vec<u8> {
+    pub fn generate_counts(&self) -> Vec<u8> {
         if self.mines.is_empty() {
             return vec![];
         }
@@ -267,7 +266,8 @@ impl Data {
             for col in 0..self.width {
                 let pos = (col, row);
 
-                let count = self.get_neighbours(pos, true)
+                let count = self
+                    .get_neighbours(pos, true)
                     .filter(|pos| self.mines.contains(pos))
                     .count() as u8;
                 counts.push(count);
@@ -287,10 +287,11 @@ impl Data {
                     let is_mine = self.mines.contains(&pos);
                     let is_discovered = self.clicked.contains(&pos);
 
-                    if
-                    (is_flagged && !is_mine)
-                        || (is_discovered && is_mine)
-                        || (!is_discovered && !is_mine) {
+                    #[allow(clippy::nonminimal_bool)]
+                    if (is_flagged && !is_mine) //badly flagged mine
+                        || (is_discovered && is_mine) //exploded mine
+                        || (!is_discovered && !is_mine) //undiscovered square
+                    {
                         return false;
                     }
                 }
@@ -299,12 +300,10 @@ impl Data {
             true
         };
 
-        !self.game_has_been_lost()
-            && !self.mines.is_empty()
-            && check_all_squares()
+        !self.game_has_been_lost() && !self.mines.is_empty() && check_all_squares()
     }
 
-    pub fn game_has_been_lost (&self) -> bool {
+    pub fn game_has_been_lost(&self) -> bool {
         self.mines.intersection(&self.clicked).next().is_some()
     }
 }
