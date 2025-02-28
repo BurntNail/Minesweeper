@@ -1,13 +1,10 @@
-use crate::board::{Board, Data, GridElementType};
+use crate::board::{Board, GridElementType};
 use eframe::epaint::StrokeKind;
 use eframe::{App, CreationContext, Frame, Storage};
 use egui::{
     Align2, Color32, Context, CursorIcon, FontId, Grid, Rect, Scene, Sense, Slider, Stroke, Widget,
     pos2, vec2,
 };
-use std::collections::HashSet;
-use std::fmt::{Display, Formatter};
-use std::num::ParseIntError;
 use std::time::{Duration, Instant};
 
 pub struct MinesweeperApp {
@@ -17,137 +14,6 @@ pub struct MinesweeperApp {
     board_rect: Rect,
     next_width: usize,
     next_mines: usize,
-}
-
-#[derive(Debug)]
-pub enum DataReadError {
-    UnableToParseInteger(ParseIntError),
-    NotEnoughElements,
-    InvalidCharacter(char),
-    InvalidDataFound,
-}
-
-impl From<ParseIntError> for DataReadError {
-    fn from(value: ParseIntError) -> Self {
-        Self::UnableToParseInteger(value)
-    }
-}
-
-impl Display for DataReadError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DataReadError::UnableToParseInteger(e) => write!(f, "Error parsing integer: {e}"),
-            DataReadError::NotEnoughElements => {
-                write!(f, "Not enough elements compared to length counts provided")
-            }
-            DataReadError::InvalidCharacter(ch) => {
-                write!(f, "Found non-integer, non-comma character: {ch:?}")
-            }
-            DataReadError::InvalidDataFound => write!(f, "Read in data which broke invariants"),
-        }
-    }
-}
-
-impl std::error::Error for DataReadError {
-    fn cause(&self) -> Option<&dyn std::error::Error> {
-        if let DataReadError::UnableToParseInteger(e) = &self {
-            Some(e)
-        } else {
-            None
-        }
-    }
-}
-
-impl TryFrom<String> for Data {
-    type Error = DataReadError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        //i could do a big state machine, but i cba and this works well enough
-        let mut lengths = [0; 4];
-        let mut numbers = vec![];
-
-        let mut accum = String::new();
-
-        let mut i = 0;
-        for ch in value.chars() {
-            if ch.is_ascii_digit() {
-                accum.push(ch);
-            } else if ch == ',' {
-                let parsed = accum.parse()?;
-                accum.clear();
-
-                if i <= 3 {
-                    lengths[i] = parsed;
-                } else {
-                    numbers.push(parsed);
-                }
-
-                if i == 3 {
-                    numbers.reserve(lengths[1] + lengths[2] + lengths[3]);
-                }
-
-                i += 1;
-            }
-        }
-        numbers.push(accum.parse()?);
-
-        let [width, n_flagged, n_clicked, number_of_mines] = lengths;
-
-        if width == 0 || number_of_mines == 0 || number_of_mines > (width * width - 1) {
-            return Err(DataReadError::InvalidDataFound);
-        }
-
-        let mut get_hashset = |count| {
-            let mut set = HashSet::new();
-            for _ in 0..count {
-                let Some(y) = numbers.pop() else {
-                    return Err(DataReadError::NotEnoughElements);
-                };
-                let Some(x) = numbers.pop() else {
-                    return Err(DataReadError::NotEnoughElements);
-                };
-
-                set.insert((x, y));
-            }
-
-            Ok(set)
-        };
-
-        let mines = get_hashset(number_of_mines)?;
-        let clicked = get_hashset(n_clicked)?;
-        let flagged = get_hashset(n_flagged)?;
-
-        Ok(Data {
-            width,
-            number_of_mines,
-            flagged,
-            clicked,
-            mines,
-        })
-    }
-}
-
-impl From<Data> for String {
-    fn from(
-        Data {
-            width,
-            number_of_mines: _,
-            flagged,
-            clicked,
-            mines,
-        }: Data,
-    ) -> Self {
-        let mut output = format!(
-            "{width},{},{},{}",
-            flagged.len(),
-            clicked.len(),
-            mines.len()
-        );
-        for (x, y) in flagged.into_iter().chain(clicked).chain(mines.into_iter()) {
-            output.push_str(&format!(",{x},{y}"));
-        }
-        output
-    }
 }
 
 impl MinesweeperApp {
@@ -163,8 +29,14 @@ impl MinesweeperApp {
             }
         }
 
-        match previous_data {
-            Some(x) => {
+        previous_data.map_or_else(|| Board::new(width, number_of_mines).map(|board| Self {
+                board,
+                next_width: width,
+                next_mines: number_of_mines,
+                board_rect: Rect::ZERO,
+                game_started: None,
+                game_stopped: None,
+            }), |x| {
                 let board = Board::from_previous_data(x);
                 Some(Self {
                     next_width: board.get_width(),
@@ -174,20 +46,12 @@ impl MinesweeperApp {
                     game_started: None,
                     game_stopped: None,
                 })
-            }
-            None => Board::new(width, number_of_mines).map(|board| Self {
-                board,
-                next_width: width,
-                next_mines: number_of_mines,
-                board_rect: Rect::ZERO,
-                game_started: None,
-                game_stopped: None,
-            }),
-        }
+            })
     }
 }
 
 impl App for MinesweeperApp {
+    #[allow(clippy::too_many_lines)]
     fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
         egui::TopBottomPanel::top("top panel").show(ctx, |ui| {
             let status = match (
@@ -209,13 +73,10 @@ impl App for MinesweeperApp {
                     }
                 }),
                 _ => format!("Game in progress for {}s", {
-                    match self.game_started {
-                        Some(start) => {
+                    self.game_started.map_or(0, |start| {
                             ctx.request_repaint_after_secs(1.0);
                             start.elapsed().as_secs()
-                        },
-                        None => 0,
-                    }
+                        })
                 }),
             };
 
