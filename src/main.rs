@@ -11,6 +11,7 @@ use eframe::NativeOptions;
 mod app;
 mod board;
 mod data;
+mod tile;
 
 fn main() {
     //sensible defaults for first time running

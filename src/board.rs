@@ -2,6 +2,7 @@ use crate::data::{Data, InvalidDataError};
 use rand::rngs::ThreadRng;
 use std::collections::HashSet;
 use std::default::Default;
+use crate::tile::{Tile, TileInteractionState};
 
 pub struct Board {
     has_given_up: bool,
@@ -14,9 +15,7 @@ impl Data {
         Self {
             width,
             number_of_mines,
-            flagged: HashSet::new(),
-            clicked: HashSet::new(),
-            mines: HashSet::new(),
+            tiles: vec![Tile::new(false, TileInteractionState::Undiscovered); width * width],
         }
     }
 }
@@ -79,11 +78,13 @@ impl Board {
     }
 
     pub fn flags_placed(&self) -> usize {
-        self.data.flagged.len()
+        0
+        // self.data.flagged.len()
     }
 
     pub fn successfully_flagged(&self) -> usize {
-        self.data.flagged.intersection(&self.data.mines).count()
+        0
+        // self.data.flagged.intersection(&self.data.mines).count()
     }
 
     pub fn give_up(&mut self) {
@@ -95,7 +96,7 @@ impl Board {
     }
 
     pub fn toggle_flag(&mut self, pos: (usize, usize)) {
-        if self.game_has_been_won() || self.game_has_been_lost() || self.data.clicked.contains(&pos)
+        if self.game_has_been_won() || self.game_has_been_lost()
         {
             return;
         }
@@ -112,38 +113,29 @@ impl Board {
     }
 
     pub fn render(&self) -> Vec<RenderedGridElement> {
-        let mut grid = Vec::with_capacity(self.data.width * self.data.width);
+        self.data.tiles.iter().enumerate().map(|(i, tile)| {
+            let ty = if tile.is_mine() && tile.is_flagged() {
+                GridElementType::Exploded
+            } else if tile.is_mine() && (self.game_has_been_lost() || self.game_has_been_won()) {
+                GridElementType::Mine
+            } else if tile.is_discovered() {
+                GridElementType::Discovered
+            } else {
+                GridElementType::Undiscovered
+            };
 
-        for y in 0..self.data.width {
-            for x in 0..self.data.width {
-                let pos = (x, y);
-                let ty = if self.data.mines.contains(&pos) && self.data.clicked.contains(&pos) {
-                    GridElementType::Exploded
-                } else if self.data.mines.contains(&pos)
-                    && (self.game_has_been_lost() || self.game_has_been_won())
-                {
-                    GridElementType::Mine
-                } else if self.data.clicked.contains(&pos) {
-                    GridElementType::Discovered
-                } else {
-                    GridElementType::Undiscovered
-                };
+            let should_display_count = ty == GridElementType::Discovered
+                && self
+                .data
+                .get_neighbours(self.data.index_to_coords(i), true)
+                .any(|neighbour| !self.data.tiles[neighbour].is_discovered());
 
-                let should_display_count = ty == GridElementType::Discovered
-                    && self
-                        .data
-                        .get_neighbours(pos, true)
-                        .any(|neighbour| !self.data.clicked.contains(&neighbour));
-
-                grid.push(RenderedGridElement {
-                    ty,
-                    flagged: self.data.flagged.contains(&pos),
-                    should_display_count,
-                });
+            RenderedGridElement {
+                ty,
+                flagged: tile.is_flagged(),
+                should_display_count,
             }
-        }
-
-        grid
+        }).collect()
     }
 
     pub fn game_has_been_won(&self) -> bool {

@@ -2,14 +2,13 @@ use rand::Rng;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::num::ParseIntError;
+use crate::tile::{Tile, TileInteractionState};
 
 #[derive(Clone)]
 pub struct Data {
     pub width: usize,
     pub number_of_mines: usize,
-    pub flagged: HashSet<(usize, usize)>,
-    pub clicked: HashSet<(usize, usize)>,
-    pub mines: HashSet<(usize, usize)>,
+    pub tiles: Vec<Tile>,
 }
 
 #[derive(Debug)]
@@ -75,44 +74,31 @@ impl TryFrom<String> for Data {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         //i could do a big state machine, but i cba and this works well enough
-        let mut lengths = [0; 4];
-        let mut numbers = vec![];
 
         let mut accum = String::new();
         let mut chars = value.chars();
 
-        //parse lengths
-        let mut i = 0;
-        for ch in &mut chars {
+        let width: usize = loop {
+            let Some(ch) = chars.next() else {
+                return Err(DataReadError::NotEnoughElements);
+            };
+
             if ch.is_ascii_digit() {
                 accum.push(ch);
             } else {
                 let parsed = accum.parse()?;
                 accum.clear();
-
-                lengths[i] = parsed;
-                if i == 3 {
-                    break;
-                }
-
-                i += 1;
+                break parsed;
             }
-        }
+        };
 
-        let [width, n_flagged, n_clicked, number_of_mines] = lengths;
         if width <= 1 {
             return Err(DataReadError::InvalidDataFound(
                 InvalidDataError::TooSmallWidth,
             ));
-        } else if number_of_mines == 0 {
-            return Err(DataReadError::InvalidDataFound(InvalidDataError::ZeroMines));
-        } else if number_of_mines > (width * width - 1) {
-            return Err(DataReadError::InvalidDataFound(
-                InvalidDataError::TooManyMines,
-            ));
         }
 
-        numbers.reserve(n_flagged + n_clicked + number_of_mines);
+        let mut tiles = Vec::with_capacity(width * width);
 
         //parse numbers
         for ch in chars {
@@ -121,37 +107,23 @@ impl TryFrom<String> for Data {
             } else if ch == ',' {
                 let parsed = accum.parse()?;
                 accum.clear();
-                numbers.push(parsed);
+                tiles.push(Tile::from_state(parsed));
             }
         }
-        numbers.push(accum.parse()?);
 
-        let mut get_hashset = |count| {
-            let mut set = HashSet::new();
-            for _ in 0..count {
-                let Some(y) = numbers.pop() else {
-                    return Err(DataReadError::NotEnoughElements);
-                };
-                let Some(x) = numbers.pop() else {
-                    return Err(DataReadError::NotEnoughElements);
-                };
+        tiles.push(Tile::from_state(accum.parse()?));
 
-                set.insert((x, y));
-            }
-
-            Ok(set)
-        };
-
-        let mines = get_hashset(number_of_mines)?;
-        let clicked = get_hashset(n_clicked)?;
-        let flagged = get_hashset(n_flagged)?;
+        let number_of_mines = tiles.iter().filter(|x| x.is_mine()).count();
+        if number_of_mines == 0 {
+            return Err(DataReadError::InvalidDataFound(InvalidDataError::ZeroMines));
+        } else if number_of_mines > (width * width - 1) {
+            return Err(DataReadError::InvalidDataFound(InvalidDataError::TooManyMines));
+        }
 
         Ok(Self {
             width,
             number_of_mines,
-            flagged,
-            clicked,
-            mines,
+            tiles,
         })
     }
 }
@@ -161,39 +133,32 @@ impl From<Data> for String {
         Data {
             width,
             number_of_mines: _,
-            flagged,
-            clicked,
-            mines,
+            tiles,
         }: Data,
     ) -> Self {
-        let mut output = format!(
-            "{width},{},{},{}",
-            flagged.len(),
-            clicked.len(),
-            mines.len()
-        );
-        for (x, y) in flagged.into_iter().chain(clicked).chain(mines.into_iter()) {
-            output.push_str(&format!(",{x},{y}"));
+        let mut output = width.to_string();
+        output.reserve(tiles.len() * 2);
+        for tile in tiles.into_iter().map(|x| x.get_state()) {
+            output.push_str(&format!(",{tile}"));
         }
         output
     }
 }
 
 impl Data {
-    const fn index_to_coords(&self, idx: usize) -> (usize, usize) {
+    pub const fn index_to_coords(&self, idx: usize) -> (usize, usize) {
         (idx / self.width, idx % self.width)
     }
 
-    #[allow(dead_code)]
-    const fn coords_to_index(&self, (x, y): (usize, usize)) -> usize {
+    pub const fn coords_to_index(&self, (x, y): (usize, usize)) -> usize {
         y * self.width + x
     }
 
     pub fn toggle_flag(&mut self, pos: (usize, usize)) {
-        if self.flagged.contains(&pos) {
-            self.flagged.remove(&pos);
-        } else if self.flagged.len() < self.mines.len() {
-            self.flagged.insert(pos);
+        let index = self.coords_to_index(pos);
+
+        if self.tiles[index].is_flagged() || self.tiles.iter().filter(|x| x.is_flagged()).count() < self.tiles.iter().filter(|x| x.is_mine()).count() {
+            self.tiles[index].toggle_flag();
         }
     }
 
@@ -201,7 +166,7 @@ impl Data {
         &self,
         (x, y): (usize, usize),
         include_diagonals: bool,
-    ) -> impl Iterator<Item = (usize, usize)> + use<> {
+    ) -> impl Iterator<Item = usize> + use<'_> {
         //0, 0 is top left
         let left = x.checked_sub(1);
         let horiz_middle = Some(x);
@@ -224,55 +189,65 @@ impl Data {
             .chain(optional(left.zip(below)))
             .chain(optional(right.zip(above)))
             .chain(optional(right.zip(below)))
+            .map(|pos| self.coords_to_index(pos))
     }
 
     pub fn click(&mut self, pos: (usize, usize), rng: &mut impl Rng) -> bool {
-        if self.mines.is_empty() {
+        let pos_index = self.coords_to_index(pos);
+
+        if self.tiles.iter().all(|tile| !tile.is_mine()) {
             let mut left_to_place = self.number_of_mines;
+            let mut mines_to_place = HashSet::new();
 
             loop {
                 let new_mine_candidate = rng.random_range(0..(self.width * self.width));
-                let new_mine_candidate = self.index_to_coords(new_mine_candidate);
-                if new_mine_candidate == pos || self.mines.contains(&new_mine_candidate) {
+                if new_mine_candidate == pos_index || mines_to_place.contains(&new_mine_candidate) {
                     continue;
                 }
 
-                self.mines.insert(new_mine_candidate);
+                mines_to_place.insert(new_mine_candidate);
 
                 left_to_place -= 1;
                 if left_to_place == 0 {
                     break;
                 }
             }
+
+            for mine in mines_to_place {
+                self.tiles[mine] = Tile::new(true, TileInteractionState::Undiscovered);
+            }
         }
 
-        if self.clicked.contains(&pos) {
+        if self.tiles[pos_index].is_discovered() {
             return false;
         }
-        self.clicked.insert(pos);
+        self.tiles[pos_index].click();
 
-        if self.mines.contains(&pos) {
+        if self.tiles[pos_index].is_mine() {
             return true;
         }
-        self.flagged.remove(&pos);
+        //TODO: remove_flag method
+        if self.tiles[pos_index].is_flagged() {
+            self.tiles[pos_index].toggle_flag();
+        }
 
         let mut neighbours_to_check: Vec<_> = self.get_neighbours(pos, true).collect();
         let mut mines_to_double_check = HashSet::new();
 
         while let Some(neighbour) = neighbours_to_check.pop() {
-            if self.mines.contains(&neighbour) {
+            if self.tiles[neighbour].is_mine() {
                 mines_to_double_check.insert(neighbour);
                 continue;
-            } else if self.clicked.contains(&neighbour) || self.flagged.contains(&neighbour) {
+            } else if self.tiles[neighbour].is_discovered() || self.tiles[neighbour].is_flagged() {
                 continue;
             }
 
-            let mut neighbours: Vec<_> = self.get_neighbours(neighbour, true).collect();
+            let mut neighbours: Vec<_> = self.get_neighbours(self.index_to_coords(neighbour), true).collect();
 
             let mut has_a_mine_nearby = false;
             for mine in neighbours
                 .iter()
-                .filter(|x| self.mines.contains(x))
+                .filter(|x| self.tiles[**x].is_mine())
                 .copied()
             {
                 has_a_mine_nearby = true;
@@ -281,22 +256,22 @@ impl Data {
 
             if !has_a_mine_nearby {
                 neighbours.retain(|candidate| {
-                    !self.clicked.contains(candidate)
-                        && !self.flagged.contains(candidate)
+                    !self.tiles[*candidate].is_discovered()
+                        && !self.tiles[*candidate].is_flagged()
                         && !neighbours_to_check.contains(candidate)
                 });
                 neighbours_to_check.extend(neighbours);
             }
 
-            self.clicked.insert(neighbour);
+            self.tiles[neighbour].click();
         }
 
         for mine in mines_to_double_check {
             if self
-                .get_neighbours(mine, true)
-                .all(|x| self.clicked.contains(&x))
+                .get_neighbours(self.index_to_coords(mine), true)
+                .all(|x| self.tiles[x].is_discovered())
             {
-                self.flagged.insert(mine);
+                self.tiles[mine].toggle_flag();
             }
         }
 
@@ -304,7 +279,7 @@ impl Data {
     }
 
     pub fn generate_counts(&self) -> Vec<u8> {
-        if self.mines.is_empty() {
+        if self.tiles.iter().all(|x| !x.is_mine()) {
             return vec![];
         }
         let mut counts = Vec::with_capacity(self.width * self.width);
@@ -315,7 +290,7 @@ impl Data {
 
                 let count = self
                     .get_neighbours(pos, true)
-                    .filter(|pos| self.mines.contains(pos))
+                    .filter(|pos| self.tiles[*pos].is_mine())
                     .count() as u8;
                 counts.push(count);
             }
@@ -326,32 +301,30 @@ impl Data {
 
     pub fn game_has_been_won(&self) -> bool {
         let check_all_squares = || {
-            for x in 0..self.width {
-                for y in 0..self.width {
-                    let pos = (x, y);
+            for tile in &self.tiles {
+                let is_flagged = tile.is_flagged();
+                let is_mine = tile.is_mine();
+                let is_discovered = tile.is_discovered();
 
-                    let is_flagged = self.flagged.contains(&pos);
-                    let is_mine = self.mines.contains(&pos);
-                    let is_discovered = self.clicked.contains(&pos);
-
-                    #[allow(clippy::nonminimal_bool)]
-                    if (is_flagged && !is_mine) //badly flagged mine
-                        || (is_discovered && is_mine) //exploded mine
-                        || (!is_discovered && !is_mine && !is_flagged)
-                    //undiscovered square
-                    {
-                        return false;
-                    }
+                #[allow(clippy::nonminimal_bool)]
+                if (is_flagged && !is_mine) //badly flagged mine
+                    || (is_discovered && is_mine) //exploded mine
+                    || (!is_discovered && !is_mine && !is_flagged)
+                //undiscovered square
+                {
+                    return false;
                 }
+
             }
 
             true
         };
 
-        !self.game_has_been_lost() && !self.mines.is_empty() && check_all_squares()
+        !self.game_has_been_lost() && !self.tiles.iter().all(|x| !x.is_mine()) && check_all_squares()
     }
 
     pub fn game_has_been_lost(&self) -> bool {
-        self.mines.intersection(&self.clicked).next().is_some()
+        false
+        // self.mines.intersection(&self.clicked).next().is_some()
     }
 }
