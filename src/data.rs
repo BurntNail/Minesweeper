@@ -1,4 +1,5 @@
 use rand::Rng;
+use rand::prelude::IteratorRandom;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::num::ParseIntError;
@@ -6,6 +7,7 @@ use std::num::ParseIntError;
 #[derive(Clone)]
 pub struct Data {
     pub width: usize,
+    pub height: usize,
     pub number_of_mines: usize,
     pub flagged: HashSet<(usize, usize)>,
     pub clicked: HashSet<(usize, usize)>,
@@ -54,6 +56,7 @@ impl std::error::Error for DataReadError {
 #[derive(Copy, Clone, Debug)]
 pub enum InvalidDataError {
     TooSmallWidth,
+    TooSmallHeight,
     ZeroMines,
     TooManyMines,
 }
@@ -63,6 +66,7 @@ impl Display for InvalidDataError {
         match self {
             Self::ZeroMines => write!(f, "Found data with zero mines"),
             Self::TooSmallWidth => write!(f, "Found data 1 or less width"),
+            Self::TooSmallHeight => write!(f, "Found data 1 or less height"),
             Self::TooManyMines => write!(f, "Found data with more mines than allowed mine spaces"),
         }
     }
@@ -75,7 +79,7 @@ impl TryFrom<String> for Data {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         //i could do a big state machine, but i cba and this works well enough
-        let mut lengths = [0; 4];
+        let mut lengths = [0; 5];
         let mut numbers = vec![];
 
         let mut accum = String::new();
@@ -91,7 +95,7 @@ impl TryFrom<String> for Data {
                 accum.clear();
 
                 lengths[i] = parsed;
-                if i == 3 {
+                if i == lengths.len() - 1 {
                     break;
                 }
 
@@ -99,14 +103,14 @@ impl TryFrom<String> for Data {
             }
         }
 
-        let [width, n_flagged, n_clicked, number_of_mines] = lengths;
+        let [width, height, n_flagged, n_clicked, number_of_mines] = lengths;
         if width <= 1 {
             return Err(DataReadError::InvalidDataFound(
                 InvalidDataError::TooSmallWidth,
             ));
         } else if number_of_mines == 0 {
             return Err(DataReadError::InvalidDataFound(InvalidDataError::ZeroMines));
-        } else if number_of_mines > (width * width - 1) {
+        } else if number_of_mines > (width * height - 1) {
             return Err(DataReadError::InvalidDataFound(
                 InvalidDataError::TooManyMines,
             ));
@@ -148,6 +152,7 @@ impl TryFrom<String> for Data {
 
         Ok(Self {
             width,
+            height,
             number_of_mines,
             flagged,
             clicked,
@@ -160,6 +165,7 @@ impl From<Data> for String {
     fn from(
         Data {
             width,
+            height,
             number_of_mines: _,
             flagged,
             clicked,
@@ -167,7 +173,7 @@ impl From<Data> for String {
         }: Data,
     ) -> Self {
         let mut output = format!(
-            "{width},{},{},{}",
+            "{width},{height},{},{},{}",
             flagged.len(),
             clicked.len(),
             mines.len()
@@ -181,7 +187,7 @@ impl From<Data> for String {
 
 impl Data {
     const fn index_to_coords(&self, idx: usize) -> (usize, usize) {
-        (idx / self.width, idx % self.width)
+        (idx % self.width, idx / self.width)
     }
 
     #[allow(dead_code)]
@@ -209,7 +215,7 @@ impl Data {
 
         let above = y.checked_sub(1);
         let vert_middle = Some(y);
-        let below = if y < self.width { Some(y + 1) } else { None };
+        let below = if y < self.height { Some(y + 1) } else { None };
 
         let optional = |neighbour| -> Option<(usize, usize)> {
             include_diagonals.then_some(neighbour).flatten()
@@ -229,26 +235,12 @@ impl Data {
     pub fn click(&mut self, pos: (usize, usize), rng: &mut impl Rng) -> bool {
         //if mines are empty, we need to add more mines!
         if self.mines.is_empty() {
-            let mut left_to_place = self.number_of_mines;
-
-            loop {
-                //generate a candidate
-                let new_mine_candidate = self.index_to_coords(rng.random_range(0..(self.width * self.width)));
-                //if that's the position we clicked on, or we already found that one, skip it!
-                if new_mine_candidate == pos || self.mines.contains(&new_mine_candidate) {
-                    continue;
-                }
-
-                //if not, add it to the list
-                self.mines.insert(new_mine_candidate);
-
-                //then mark it down
-                left_to_place -= 1;
-                if left_to_place == 0 {
-                    //and if there are none left, stop!
-                    break;
-                }
-            }
+            self.mines.extend(
+                (0..(self.width * self.height))
+                    .map(|x| self.index_to_coords(x))
+                    .filter(|x| *x != pos)
+                    .choose_multiple(rng, self.number_of_mines),
+            );
         }
 
         //if we've already clicked it, skip out
@@ -306,7 +298,6 @@ impl Data {
                 });
                 neighbours_to_check.extend(neighbours);
             }
-
         }
 
         //for all the mines that were neighbours of cells
@@ -329,11 +320,11 @@ impl Data {
         if self.mines.is_empty() {
             return None;
         }
-        let mut counts = Vec::with_capacity(self.width * self.width);
+        let mut counts = Vec::with_capacity(self.width * self.height);
 
-        for row in 0..self.width {
-            for col in 0..self.width {
-                let pos = (col, row);
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let pos = (x, y);
 
                 let count = self
                     .get_neighbours(pos, true)
@@ -348,8 +339,8 @@ impl Data {
 
     pub fn game_has_been_won(&self) -> bool {
         let check_all_squares = || {
-            for x in 0..self.width {
-                for y in 0..self.width {
+            for y in 0..self.height {
+                for x in 0..self.width {
                     let pos = (x, y);
 
                     let is_flagged = self.flagged.contains(&pos);

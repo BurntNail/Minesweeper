@@ -10,9 +10,10 @@ pub struct Board {
 }
 
 impl Data {
-    pub fn new(width: usize, number_of_mines: usize) -> Self {
+    pub fn new(width: usize, height: usize, number_of_mines: usize) -> Self {
         Self {
             width,
+            height,
             number_of_mines,
             flagged: HashSet::new(),
             clicked: HashSet::new(),
@@ -27,6 +28,8 @@ impl TryFrom<Data> for Board {
     fn try_from(data: Data) -> Result<Self, Self::Error> {
         if data.width <= 1 {
             return Err(InvalidDataError::TooSmallWidth);
+        } else if data.height <= 1 {
+            return Err(InvalidDataError::TooSmallHeight);
         } else if data.number_of_mines == 0 {
             return Err(InvalidDataError::ZeroMines);
         } else if data.number_of_mines > (data.width * data.width - 1) {
@@ -42,18 +45,22 @@ impl TryFrom<Data> for Board {
 }
 
 impl Board {
-    pub fn new(width: usize, number_of_mines: usize) -> Result<Self, InvalidDataError> {
+    pub fn new(
+        width: usize,
+        height: usize,
+        number_of_mines: usize,
+    ) -> Result<Self, InvalidDataError> {
         if width <= 1 {
             return Err(InvalidDataError::TooSmallWidth);
         } else if number_of_mines == 0 {
             return Err(InvalidDataError::ZeroMines);
-        } else if number_of_mines > (width * width - 1) {
+        } else if number_of_mines > (width * height - 1) {
             return Err(InvalidDataError::TooManyMines);
         }
 
         Ok(Self {
             has_given_up: false,
-            data: Data::new(width, number_of_mines),
+            data: Data::new(width, height, number_of_mines),
             rng: ThreadRng::default(),
         })
     }
@@ -62,16 +69,22 @@ impl Board {
         Self::try_from(data)
     }
 
-    pub fn reset(&mut self, new_mines_width: Option<(usize, usize)>) {
+    pub fn reset(&mut self, new_width_height_mines: Option<(usize, usize, usize)>) {
         self.has_given_up = false;
 
-        let (new_width, new_mines) =
-            new_mines_width.unwrap_or((self.data.width, self.data.number_of_mines));
-        self.data = Data::new(new_width, new_mines);
+        let (new_width, new_height, new_mines) = new_width_height_mines.unwrap_or((
+            self.data.width,
+            self.data.height,
+            self.data.number_of_mines,
+        ));
+        self.data = Data::new(new_width, new_height, new_mines);
     }
 
     pub const fn get_width(&self) -> usize {
         self.data.width
+    }
+    pub const fn get_height(&self) -> usize {
+        self.data.height
     }
 
     pub const fn total_mines(&self) -> usize {
@@ -112,9 +125,9 @@ impl Board {
     }
 
     pub fn render(&self) -> Vec<RenderedGridElement> {
-        let mut grid = Vec::with_capacity(self.data.width * self.data.width);
+        let mut grid = Vec::with_capacity(self.data.width * self.data.height);
 
-        for y in 0..self.data.width {
+        for y in 0..self.data.height {
             for x in 0..self.data.width {
                 let pos = (x, y);
                 let ty = if self.data.mines.contains(&pos) && self.data.clicked.contains(&pos) {

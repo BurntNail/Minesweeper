@@ -25,7 +25,8 @@ fn main() {
         options,
         Box::new(|cc| {
             Ok(Box::new(
-                MinesweeperApp::new(size, number_of_mines, cc).expect("unable to create board"),
+                MinesweeperApp::new(size, size, number_of_mines, cc)
+                    .expect("unable to create board"),
             ))
         }),
     )

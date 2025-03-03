@@ -20,6 +20,8 @@ pub struct MinesweeperApp {
     board_rect: Rect,
     ///The width of the next board to be created
     next_width: usize,
+    ///The width of the next board to be created
+    next_height: usize,
     ///The number of mines in the next board to be created
     next_mines: usize,
     cached_counts: Vec<u8>,
@@ -28,6 +30,7 @@ pub struct MinesweeperApp {
 impl MinesweeperApp {
     pub fn new(
         width: usize,
+        height: usize,
         number_of_mines: usize,
         cc: &CreationContext,
     ) -> Result<Self, InvalidDataError> {
@@ -50,12 +53,13 @@ impl MinesweeperApp {
         //then we use that to either create a board with the previous data, or we just use the defaults
         //both of the Board creation methods return Results which avoid logic errors
         let board = previous_data.map_or_else(
-            || Board::new(width, number_of_mines),
+            || Board::new(width, height, number_of_mines),
             Board::from_previous_data,
         )?;
 
         Ok(Self {
             next_width: board.get_width(),
+            next_height: board.get_height(),
             next_mines: board.total_mines(),
             board_rect: Rect::ZERO,
             game_started: None,
@@ -107,7 +111,11 @@ impl App for MinesweeperApp {
                         reset_vars = true;
                     }
                     if ui.button("Reset Game?").clicked() {
-                        self.board.reset(Some((self.next_width, self.next_mines)));
+                        self.board.reset(Some((
+                            self.next_width,
+                            self.next_height,
+                            self.next_mines,
+                        )));
                         reset_vars = true;
                     }
 
@@ -119,8 +127,8 @@ impl App for MinesweeperApp {
                 }
                 ui.end_row();
                 {
-                    ui.label("Width/Height: ");
-                    let min_width = ((self.next_mines as f32).sqrt().ceil() as usize).max(2);
+                    ui.label("Width: ");
+                    let min_width = self.next_height.min(2);
                     Slider::new(&mut self.next_width, min_width..=100)
                         .logarithmic(true)
                         .ui(ui);
@@ -129,13 +137,21 @@ impl App for MinesweeperApp {
                 }
                 ui.end_row();
                 {
-                    ui.label("Mines: ");
-                    let max_mines = self.next_width * self.next_width - 1;
-                    Slider::new(&mut self.next_mines, 1..=max_mines)
+                    ui.label("Height: ");
+                    let min_height = self.next_width.min(2);
+                    Slider::new(&mut self.next_height, min_height..=100)
                         .logarithmic(true)
                         .ui(ui);
 
                     ui.label(format!("Total Mines: {}", self.board.total_mines()));
+                }
+                ui.end_row();
+                {
+                    ui.label("Mines: ");
+                    let max_mines = self.next_width * self.next_height - 1;
+                    Slider::new(&mut self.next_mines, 1..=max_mines)
+                        .logarithmic(true)
+                        .ui(ui);
                 }
                 ui.end_row();
             });
@@ -147,20 +163,39 @@ impl App for MinesweeperApp {
             let rsp = Scene::new()
                 .zoom_range(0.05..=5.0)
                 .show(ui, &mut self.board_rect, |ui| {
-                    let available_space = ui.available_rect_before_wrap();
+                    let mut rect = ui.available_rect_before_wrap();
+                    let available_aspect_ratio = rect.width() / rect.height();
 
-                    let width_to_be_used =
-                        available_space.width().min(available_space.height()) * 0.95;
-                    let cell_width = width_to_be_used / self.board.get_width() as f32;
-                    let stroke_width = (cell_width * 0.1).max(1.0);
+                    let (board_width, board_height) = (
+                        self.board.get_width() as f32,
+                        self.board.get_height() as f32,
+                    );
+                    let board_aspect_ratio = board_width / board_height;
 
-                    let flag_cell_width = cell_width * 0.5;
-                    let flag_cell_delta_pos = (cell_width - flag_cell_width) / 2.0;
+                    let (sf_x, sf_y) = if available_aspect_ratio > board_aspect_ratio {
+                        (available_aspect_ratio / board_aspect_ratio, 1.0)
+                    } else {
+                        (1.0, board_aspect_ratio / available_aspect_ratio)
+                    };
 
-                    let start_x = available_space.left()
-                        + (available_space.width() - width_to_be_used - stroke_width) / 2.0;
-                    let mut start_y = available_space.top()
-                        + (available_space.height() - width_to_be_used - stroke_width) / 2.0;
+                    rect.max.x = rect.min.x + rect.width() / sf_x;
+                    rect.max.y = rect.min.y + rect.height() / sf_y;
+
+                    let width_to_be_used = rect.width() * 0.9;
+                    let height_to_be_used = rect.height() * 0.9;
+
+                    let cell_width = rect.width() / board_width;
+                    let cell_height = rect.height() / board_height;
+                    let stroke_width = (cell_width.min(cell_height) * 0.1).max(1.0);
+
+                    let flag_cell_size = cell_width.min(cell_height) * 0.5;
+                    let flag_cell_delta_x = (cell_width - flag_cell_size) / 2.0;
+                    let flag_cell_delta_y = (cell_height - flag_cell_size) / 2.0;
+
+                    let start_x =
+                        rect.left() + (rect.width() - width_to_be_used - stroke_width) / 2.0;
+                    let mut start_y =
+                        rect.top() + (rect.height() - height_to_be_used - stroke_width) / 2.0;
 
                     let counts = {
                         if self.cached_counts.is_empty() {
@@ -179,7 +214,7 @@ impl App for MinesweeperApp {
                         let entire_thing_rect = Rect {
                             min: pos2(cell_width.mul_add(column as f32, start_x), start_y),
                             max: pos2(
-                                cell_width.mul_add((column + 1) as f32, start_x),
+                                cell_height.mul_add((column + 1) as f32, start_x),
                                 start_y + cell_width,
                             ),
                         };
@@ -205,11 +240,11 @@ impl App for MinesweeperApp {
                             StrokeKind::Middle,
                         );
                         if cell.flagged {
-                            let min = entire_thing_rect.min
-                                + vec2(flag_cell_delta_pos, flag_cell_delta_pos);
+                            let min =
+                                entire_thing_rect.min + vec2(flag_cell_delta_x, flag_cell_delta_y);
                             let rect = Rect {
                                 min,
-                                max: min + vec2(flag_cell_width, flag_cell_width),
+                                max: min + vec2(flag_cell_size, flag_cell_size),
                             };
                             ui.painter().rect_filled(rect, 0.0, Color32::BLUE);
                         }
@@ -217,11 +252,11 @@ impl App for MinesweeperApp {
                             ui.painter().text(
                                 pos2(
                                     entire_thing_rect.min.x + cell_width / 2.0,
-                                    entire_thing_rect.min.y + cell_width / 2.0,
+                                    entire_thing_rect.min.y + cell_height / 2.0,
                                 ),
                                 Align2::CENTER_CENTER,
                                 counts[index].to_string(),
-                                FontId::monospace(cell_width / 4.0 * 3.0),
+                                FontId::monospace(cell_height / 4.0 * 3.0),
                                 Color32::BLACK,
                             );
                         }
