@@ -1,8 +1,7 @@
-use crate::data::Data;
+use crate::data::{Data, InvalidDataError};
 use rand::rngs::ThreadRng;
 use std::collections::HashSet;
 use std::default::Default;
-use std::fmt::{Display, Formatter};
 
 pub struct Board {
     has_given_up: bool,
@@ -22,33 +21,16 @@ impl Data {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum BoardCreationError {
-    TooSmallWidth,
-    ZeroMines,
-    TooManyMines,
-}
-
-impl Display for BoardCreationError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ZeroMines => write!(f, "Found board with zero mines"),
-            Self::TooSmallWidth => write!(f, "Found board 1 or less width"),
-            Self::TooManyMines => write!(f, "Found board with more mines than allowed mine spaces"),
-        }
-    }
-}
-
 impl TryFrom<Data> for Board {
-    type Error = BoardCreationError;
+    type Error = InvalidDataError;
 
     fn try_from(data: Data) -> Result<Self, Self::Error> {
         if data.width <= 1 {
-            return Err(BoardCreationError::TooSmallWidth);
+            return Err(InvalidDataError::TooSmallWidth);
         } else if data.number_of_mines == 0 {
-            return Err(BoardCreationError::ZeroMines);
+            return Err(InvalidDataError::ZeroMines);
         } else if data.number_of_mines > (data.width * data.width - 1) {
-            return Err(BoardCreationError::TooManyMines);
+            return Err(InvalidDataError::TooManyMines);
         }
 
         Ok(Self {
@@ -60,13 +42,13 @@ impl TryFrom<Data> for Board {
 }
 
 impl Board {
-    pub fn new(width: usize, number_of_mines: usize) -> Result<Self, BoardCreationError> {
+    pub fn new(width: usize, number_of_mines: usize) -> Result<Self, InvalidDataError> {
         if width <= 1 {
-            return Err(BoardCreationError::TooSmallWidth);
+            return Err(InvalidDataError::TooSmallWidth);
         } else if number_of_mines == 0 {
-            return Err(BoardCreationError::ZeroMines);
+            return Err(InvalidDataError::ZeroMines);
         } else if number_of_mines > (width * width - 1) {
-            return Err(BoardCreationError::TooManyMines);
+            return Err(InvalidDataError::TooManyMines);
         }
 
         Ok(Self {
@@ -76,7 +58,7 @@ impl Board {
         })
     }
 
-    pub fn from_previous_data(data: Data) -> Result<Self, BoardCreationError> {
+    pub fn from_previous_data(data: Data) -> Result<Self, InvalidDataError> {
         Self::try_from(data)
     }
 

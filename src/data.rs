@@ -17,7 +17,7 @@ pub enum DataReadError {
     UnableToParseInteger(ParseIntError),
     NotEnoughElements,
     InvalidCharacter(char),
-    InvalidDataFound,
+    InvalidDataFound(InvalidDataError),
 }
 
 impl From<ParseIntError> for DataReadError {
@@ -36,20 +36,39 @@ impl Display for DataReadError {
             Self::InvalidCharacter(ch) => {
                 write!(f, "Found non-integer, non-comma character: {ch:?}")
             }
-            Self::InvalidDataFound => write!(f, "Read in data which broke invariants"),
+            Self::InvalidDataFound(e) => write!(f, "Read in data which broke invariants: {e}"),
         }
     }
 }
 
 impl std::error::Error for DataReadError {
     fn cause(&self) -> Option<&dyn std::error::Error> {
-        if let Self::UnableToParseInteger(e) = &self {
-            Some(e)
-        } else {
-            None
+        match self {
+            Self::UnableToParseInteger(e) => Some(e),
+            Self::InvalidDataFound(e) => Some(e),
+            _ => None,
         }
     }
 }
+
+#[derive(Copy, Clone, Debug)]
+pub enum InvalidDataError {
+    TooSmallWidth,
+    ZeroMines,
+    TooManyMines,
+}
+
+impl Display for InvalidDataError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ZeroMines => write!(f, "Found data with zero mines"),
+            Self::TooSmallWidth => write!(f, "Found data 1 or less width"),
+            Self::TooManyMines => write!(f, "Found data with more mines than allowed mine spaces"),
+        }
+    }
+}
+
+impl std::error::Error for InvalidDataError {}
 
 impl TryFrom<String> for Data {
     type Error = DataReadError;
@@ -81,9 +100,18 @@ impl TryFrom<String> for Data {
         }
 
         let [width, n_flagged, n_clicked, number_of_mines] = lengths;
-        if width == 0 || number_of_mines == 0 || number_of_mines > (width * width - 1) {
-            return Err(DataReadError::InvalidDataFound);
+        if width <= 1 {
+            return Err(DataReadError::InvalidDataFound(
+                InvalidDataError::TooSmallWidth,
+            ));
+        } else if number_of_mines == 0 {
+            return Err(DataReadError::InvalidDataFound(InvalidDataError::ZeroMines));
+        } else if number_of_mines > (width * width - 1) {
+            return Err(DataReadError::InvalidDataFound(
+                InvalidDataError::TooManyMines,
+            ));
         }
+
         numbers.reserve(n_flagged + n_clicked + number_of_mines);
 
         //parse numbers
@@ -229,19 +257,29 @@ impl Data {
         self.flagged.remove(&pos);
 
         let mut neighbours_to_check: Vec<_> = self.get_neighbours(pos, true).collect();
+        let mut mines_to_double_check = HashSet::new();
 
         while let Some(neighbour) = neighbours_to_check.pop() {
-            if self.mines.contains(&neighbour) //can't click on a mine lol
-                || self.clicked.contains(&neighbour) //can't re-click
-                || self.flagged.contains(&neighbour)
-            //shouldn't click on a flagged one
-            {
+            if self.mines.contains(&neighbour) {
+                mines_to_double_check.insert(neighbour);
+                continue;
+            } else if self.clicked.contains(&neighbour) || self.flagged.contains(&neighbour) {
                 continue;
             }
 
             let mut neighbours: Vec<_> = self.get_neighbours(neighbour, true).collect();
-            let has_a_bomb_nearby = neighbours.iter().any(|x| self.mines.contains(x));
-            if !has_a_bomb_nearby {
+
+            let mut has_a_mine_nearby = false;
+            for mine in neighbours
+                .iter()
+                .filter(|x| self.mines.contains(x))
+                .copied()
+            {
+                has_a_mine_nearby = true;
+                mines_to_double_check.insert(mine);
+            }
+
+            if !has_a_mine_nearby {
                 neighbours.retain(|candidate| {
                     !self.clicked.contains(candidate)
                         && !self.flagged.contains(candidate)
@@ -251,6 +289,15 @@ impl Data {
             }
 
             self.clicked.insert(neighbour);
+        }
+
+        for mine in mines_to_double_check {
+            if self
+                .get_neighbours(mine, true)
+                .all(|x| self.clicked.contains(&x))
+            {
+                self.flagged.insert(mine);
+            }
         }
 
         self.game_has_been_won()
@@ -290,7 +337,8 @@ impl Data {
                     #[allow(clippy::nonminimal_bool)]
                     if (is_flagged && !is_mine) //badly flagged mine
                         || (is_discovered && is_mine) //exploded mine
-                        || (!is_discovered && !is_mine) //undiscovered square
+                        || (!is_discovered && !is_mine && !is_flagged)
+                    //undiscovered square
                     {
                         return false;
                     }

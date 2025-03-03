@@ -1,5 +1,5 @@
-use crate::board::{Board, BoardCreationError, GridElementType};
-use crate::data::Data;
+use crate::board::{Board, GridElementType};
+use crate::data::{Data, InvalidDataError};
 use eframe::epaint::StrokeKind;
 use eframe::{App, CreationContext, Frame, Storage};
 use egui::{
@@ -30,7 +30,7 @@ impl MinesweeperApp {
         width: usize,
         number_of_mines: usize,
         cc: &CreationContext,
-    ) -> Result<Self, BoardCreationError> {
+    ) -> Result<Self, InvalidDataError> {
         //assume we can't get any previous data
         let mut previous_data = None;
 
