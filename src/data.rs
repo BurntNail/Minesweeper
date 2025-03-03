@@ -261,6 +261,20 @@ impl Data {
         //we're also building up a list of mines to check for auto-flagging
         let mut mines_to_double_check = HashSet::new();
 
+        //TODO: DRY on checking
+        let mut mine_is_next_to_chosen = false;
+        for current_ntc in &neighbours_to_check {
+            if self.mines.contains(current_ntc) {
+                mines_to_double_check.insert(*current_ntc);
+                mine_is_next_to_chosen = true;
+            }
+        }
+
+        //don't expand if we're next to a mine
+        if mine_is_next_to_chosen {
+            neighbours_to_check.clear();
+        }
+
         while let Some(neighbour) = neighbours_to_check.pop() {
             //if this square is a mine, add it to the tobechecked list and continue to the next element
             if self.mines.contains(&neighbour) {
