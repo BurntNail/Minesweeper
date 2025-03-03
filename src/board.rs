@@ -154,7 +154,7 @@ impl Board {
         self.has_given_up || self.data.game_has_been_lost()
     }
 
-    pub fn generate_counts(&self) -> Vec<u8> {
+    pub fn generate_counts(&self) -> Option<Vec<u8>> {
         self.data.generate_counts()
     }
 }

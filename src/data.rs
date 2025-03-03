@@ -227,48 +227,65 @@ impl Data {
     }
 
     pub fn click(&mut self, pos: (usize, usize), rng: &mut impl Rng) -> bool {
+        //if mines are empty, we need to add more mines!
         if self.mines.is_empty() {
             let mut left_to_place = self.number_of_mines;
 
             loop {
-                let new_mine_candidate = rng.random_range(0..(self.width * self.width));
-                let new_mine_candidate = self.index_to_coords(new_mine_candidate);
+                //generate a candidate
+                let new_mine_candidate = self.index_to_coords(rng.random_range(0..(self.width * self.width)));
+                //if that's the position we clicked on, or we already found that one, skip it!
                 if new_mine_candidate == pos || self.mines.contains(&new_mine_candidate) {
                     continue;
                 }
 
+                //if not, add it to the list
                 self.mines.insert(new_mine_candidate);
 
+                //then mark it down
                 left_to_place -= 1;
                 if left_to_place == 0 {
+                    //and if there are none left, stop!
                     break;
                 }
             }
         }
 
+        //if we've already clicked it, skip out
         if self.clicked.contains(&pos) {
             return false;
         }
+        //'click' it and unflag it
         self.clicked.insert(pos);
+        self.flagged.remove(&pos);
 
+        //if it's a mine, game over
         if self.mines.contains(&pos) {
             return true;
         }
-        self.flagged.remove(&pos);
 
+        //make a list of potential squares to check - we're collecting it here to be able to add to it later
         let mut neighbours_to_check: Vec<_> = self.get_neighbours(pos, true).collect();
+        //we're also building up a list of mines to check for auto-flagging
         let mut mines_to_double_check = HashSet::new();
 
         while let Some(neighbour) = neighbours_to_check.pop() {
+            //if this square is a mine, add it to the tobechecked list and continue to the next element
             if self.mines.contains(&neighbour) {
                 mines_to_double_check.insert(neighbour);
                 continue;
+                //if this square is already clicked or flagged, skip it!
             } else if self.clicked.contains(&neighbour) || self.flagged.contains(&neighbour) {
                 continue;
             }
 
+            //since this cell is adjacent and not clicked/flagged/mine, 'click' it
+            self.clicked.insert(neighbour);
+
+            //get the neighbours of this cell
             let mut neighbours: Vec<_> = self.get_neighbours(neighbour, true).collect();
 
+            //go through the neighbours, and if there are any mines, add them to the list
             let mut has_a_mine_nearby = false;
             for mine in neighbours
                 .iter()
@@ -279,6 +296,8 @@ impl Data {
                 mines_to_double_check.insert(mine);
             }
 
+            //if there isn't a mine next to this cell, add the non-flagged non-clicked neighbours to the check list to expand the selection. this is vulnerable to duplicates, but this seems efficient enough rn
+            //TODO: check if it's worth adding a 'checked' list to avoid further duplicates
             if !has_a_mine_nearby {
                 neighbours.retain(|candidate| {
                     !self.clicked.contains(candidate)
@@ -288,24 +307,27 @@ impl Data {
                 neighbours_to_check.extend(neighbours);
             }
 
-            self.clicked.insert(neighbour);
         }
 
+        //for all the mines that were neighbours of cells
         for mine in mines_to_double_check {
+            //if we've clicked all of the adjacent cells
             if self
                 .get_neighbours(mine, true)
                 .all(|x| self.clicked.contains(&x))
             {
+                //auto-flag that mine
                 self.flagged.insert(mine);
             }
         }
 
+        //we already checked if this click would lose the game, so we now only need to check if this click won the game
         self.game_has_been_won()
     }
 
-    pub fn generate_counts(&self) -> Vec<u8> {
+    pub fn generate_counts(&self) -> Option<Vec<u8>> {
         if self.mines.is_empty() {
-            return vec![];
+            return None;
         }
         let mut counts = Vec::with_capacity(self.width * self.width);
 
@@ -321,7 +343,7 @@ impl Data {
             }
         }
 
-        counts
+        Some(counts)
     }
 
     pub fn game_has_been_won(&self) -> bool {
@@ -348,10 +370,12 @@ impl Data {
             true
         };
 
+        //use a closure to allow short-circuiting
         !self.game_has_been_lost() && !self.mines.is_empty() && check_all_squares()
     }
 
     pub fn game_has_been_lost(&self) -> bool {
+        //because iterators are lazy, this method isn't quite as bad as it looks
         self.mines.intersection(&self.clicked).next().is_some()
     }
 }

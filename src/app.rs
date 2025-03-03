@@ -60,7 +60,7 @@ impl MinesweeperApp {
             board_rect: Rect::ZERO,
             game_started: None,
             game_stopped: None,
-            cached_counts: board.generate_counts(),
+            cached_counts: board.generate_counts().unwrap_or_default(),
             board,
         })
     }
@@ -164,7 +164,9 @@ impl App for MinesweeperApp {
 
                     let counts = {
                         if self.cached_counts.is_empty() {
-                            self.cached_counts = self.board.generate_counts();
+                            if let Some(counts) = self.board.generate_counts() {
+                                self.cached_counts = counts;
+                            }
                         }
 
                         self.cached_counts.as_slice()
