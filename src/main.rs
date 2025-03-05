@@ -14,8 +14,8 @@ mod data;
 
 fn main() {
     //sensible defaults for first time running
-    let size = 25;
-    let number_of_mines = 50;
+    let size = 10;
+    let number_of_mines = 10;
 
     //don't need to change any of the native options
     let options = NativeOptions::default();
