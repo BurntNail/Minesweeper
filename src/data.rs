@@ -84,28 +84,22 @@ impl TryFrom<String> for Data {
         let mut chars = value.chars();
 
         let [width, height, n_flagged, n_clicked, n_mines] = {
-            let mut lengths = [0; 5];
+            let mut lengths = Vec::with_capacity(5);
 
-            let mut i = 0;
             for ch in &mut chars {
                 if ch.is_ascii_digit() {
                     accum.push(ch);
                 } else {
-                    lengths[i] = accum.parse()?;
+                    lengths.push(accum.parse()?);
                     accum.clear();
 
-                    i += 1;
-                    if i == lengths.len(){
+                    if lengths.len() == 5 {
                         break;
                     }
                 }
             }
 
-            if i != 5 {
-                return Err(DataReadError::NotEnoughElements(i, 5));
-            }
-
-            lengths
+            lengths.try_into().unwrap()
         };
 
         if width <= 1 {
@@ -146,6 +140,8 @@ impl TryFrom<String> for Data {
         let clicked = get_hashset(n_clicked)?;
         let mines = get_hashset(n_mines)?;
 
+        assert!(numbers.is_empty());
+
         Ok(Self {
             width,
             height,
@@ -181,11 +177,12 @@ impl From<Data> for String {
 }
 
 impl Data {
+    #[inline]
     pub const fn index_to_coords(idx: usize, width: usize) -> (usize, usize) {
         (idx % width, idx / width)
     }
 
-    #[allow(dead_code)]
+    #[inline]
     pub const fn coords_to_index((x, y): (usize, usize), width: usize) -> usize {
         y * width + x
     }
