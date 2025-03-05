@@ -353,26 +353,16 @@ impl Data {
 
     pub fn game_has_been_won(&self) -> bool {
         let check_all_squares = || {
-            for y in 0..self.height {
-                for x in 0..self.width {
-                    let pos = (x, y);
-
-                    let is_flagged = self.flagged.contains(&pos);
+            (0..self.height)
+                .map(|y| (0..self.width).map(move |x| (x, y)))
+                .flatten()
+                .all(|pos| {
                     let is_mine = self.mines.contains(&pos);
                     let is_discovered = self.clicked.contains(&pos);
 
-                    #[allow(clippy::nonminimal_bool)]
-                    if (is_flagged && !is_mine) //badly flagged mine
-                        || (is_discovered && is_mine) //exploded mine
-                        || (!is_discovered && !is_mine && !is_flagged)
-                    //undiscovered square
-                    {
-                        return false;
-                    }
-                }
-            }
-
-            true
+                    is_discovered && !is_mine
+                     || !is_discovered && is_mine
+                })
         };
 
         //use a closure to allow short-circuiting

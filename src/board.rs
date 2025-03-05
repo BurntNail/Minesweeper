@@ -2,6 +2,7 @@ use crate::data::{Data, InvalidDataError};
 use rand::rngs::ThreadRng;
 use std::collections::HashSet;
 use std::default::Default;
+use egui::{pos2, Rect};
 
 pub struct Board {
     has_given_up: bool,
@@ -172,16 +173,58 @@ impl Board {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct RenderedGridElement {
     pub ty: GridElementType,
     pub flagged: bool,
     pub should_display_count: bool,
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GridElementType {
     Exploded,
     Discovered,
     Undiscovered,
     Mine,
+}
+
+impl RenderedGridElement {
+    pub fn to_uv (self, count: u8, game_is_over: bool) -> Rect {
+        let rect = |x, y| {
+            let (x, y) = (x as f32, y as f32);
+            Rect {
+                min: pos2(0.25 * x, 0.25 * y),
+                max: pos2(0.25 * (x + 1.0), 0.25 * (y + 1.0))
+            }
+        };
+
+        if self.should_display_count {
+            return match count {
+                1 => rect(0, 0),
+                2 => rect(1, 0),
+                3 => rect(2, 0),
+                4 => rect(3, 0),
+                5 => rect(0, 1),
+                6 => rect(1, 1),
+                7 => rect(2, 1),
+                8 => rect(3, 1),
+                _ => rect(0, 2)
+            };
+        }
+
+        if self.flagged {
+            return if game_is_over && self.ty != GridElementType::Mine {
+                rect(3, 2)
+            } else {
+                rect(2, 2)
+            };
+        }
+
+        match self.ty {
+            GridElementType::Exploded => rect(3, 3),
+            GridElementType::Discovered => rect(0, 2),
+            GridElementType::Undiscovered => rect(1, 2),
+            GridElementType::Mine => rect(2, 3)
+        }
+    }
 }

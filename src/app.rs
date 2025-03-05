@@ -1,12 +1,11 @@
-use crate::board::{Board, GridElementType};
+use std::io::Cursor;
+use crate::board::{Board};
 use crate::data::{Data, InvalidDataError};
-use eframe::epaint::StrokeKind;
+use eframe::epaint::{ColorImage};
 use eframe::{App, CreationContext, Frame, Storage};
-use egui::{
-    Align2, Color32, Context, CursorIcon, FontId, Grid, Rect, Scene, Sense, Slider, Stroke, Widget,
-    pos2, vec2,
-};
+use egui::{Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, Widget, pos2, TextureHandle, TextureOptions};
 use std::time::{Duration, Instant};
+use image::{ImageFormat, ImageReader};
 
 ///Struct to keep a hold of all things related to the minesweeper UI/app
 pub struct MinesweeperApp {
@@ -25,6 +24,7 @@ pub struct MinesweeperApp {
     ///The number of mines in the next board to be created
     next_mines: usize,
     cached_counts: Vec<u8>,
+    image_handle: TextureHandle,
 }
 
 impl MinesweeperApp {
@@ -36,6 +36,23 @@ impl MinesweeperApp {
     ) -> Result<Self, InvalidDataError> {
         //assume we can't get any previous data
         let mut previous_data = None;
+
+        let image_handle = {
+            const BYTES: &[u8] = include_bytes!("../WinmineXP.png");
+
+            let bytes = Cursor::new(BYTES);
+
+            let dynimage = ImageReader::with_format(bytes, ImageFormat::Png).decode().expect("unable to decode image").to_rgba8();
+            let (w, h) = dynimage.dimensions();
+            let pixels = dynimage.as_flat_samples();
+            let img = ColorImage::from_rgba_unmultiplied([w as usize, h as usize], pixels.as_slice());
+
+            cc.egui_ctx.load_texture(
+                "winminexptex",
+                img,
+                TextureOptions::NEAREST
+            )
+        };
 
         //but if we can get a data key
         if let Some(data) = cc.storage.and_then(|x| x.get_string("data")) {
@@ -66,6 +83,7 @@ impl MinesweeperApp {
             game_stopped: None,
             cached_counts: board.generate_counts().unwrap_or_default(),
             board,
+            image_handle,
         })
     }
 }
@@ -184,18 +202,12 @@ impl App for MinesweeperApp {
                     let width_to_be_used = rect.width() * 0.9;
                     let height_to_be_used = rect.height() * 0.9;
 
-                    let cell_width = rect.width() / board_width;
-                    let cell_height = rect.height() / board_height;
-                    let stroke_width = (cell_width.min(cell_height) * 0.1).max(1.0);
-
-                    let flag_cell_size = cell_width.min(cell_height) * 0.5;
-                    let flag_cell_delta_x = (cell_width - flag_cell_size) / 2.0;
-                    let flag_cell_delta_y = (cell_height - flag_cell_size) / 2.0;
+                    let cell_size = rect.width() / board_width;
 
                     let start_x =
-                        rect.left() + (rect.width() - width_to_be_used - stroke_width) / 2.0;
+                        rect.left() + (rect.width() - width_to_be_used) / 2.0;
                     let mut start_y =
-                        rect.top() + (rect.height() - height_to_be_used - stroke_width) / 2.0;
+                        rect.top() + (rect.height() - height_to_be_used) / 2.0;
 
                     let counts = {
                         if self.cached_counts.is_empty() {
@@ -207,69 +219,30 @@ impl App for MinesweeperApp {
                         self.cached_counts.as_slice()
                     };
 
+                    let game_is_over = self.board.game_has_been_won() || self.board.game_has_been_lost();
+
                     let mut row = 0;
                     for (index, cell) in self.board.render().into_iter().enumerate() {
                         let column = index % self.board.get_width();
 
                         let entire_thing_rect = Rect {
-                            min: pos2(cell_width.mul_add(column as f32, start_x), start_y),
+                            min: pos2(cell_size.mul_add(column as f32, start_x), start_y),
                             max: pos2(
-                                cell_height.mul_add((column + 1) as f32, start_x),
-                                start_y + cell_width,
+                                cell_size.mul_add((column + 1) as f32, start_x),
+                                start_y + cell_size,
                             ),
                         };
 
-                        let colour = match cell.ty {
-                            GridElementType::Discovered => Color32::DARK_GRAY,
-                            GridElementType::Exploded => Color32::RED,
-                            GridElementType::Mine => {
-                                if self.board.game_has_been_won() {
-                                    Color32::GREEN
-                                } else {
-                                    Color32::PURPLE
-                                }
-                            }
-                            GridElementType::Undiscovered => Color32::WHITE,
-                        };
-
-                        ui.painter().rect(
+                        ui.painter().image(
+                            self.image_handle.id(),
                             entire_thing_rect,
-                            0.0,
-                            colour,
-                            Stroke::new(stroke_width, Color32::GRAY),
-                            StrokeKind::Middle,
+                            cell.to_uv(counts.get(index).copied().unwrap_or_default(), game_is_over),
+                            Color32::WHITE
                         );
-                        if cell.flagged {
-                            let min =
-                                entire_thing_rect.min + vec2(flag_cell_delta_x, flag_cell_delta_y);
-                            let rect = Rect {
-                                min,
-                                max: min + vec2(flag_cell_size, flag_cell_size),
-                            };
-                            ui.painter().rect_filled(rect, 0.0, Color32::BLUE);
-                        }
-                        if cell.should_display_count {
-                            ui.painter().text(
-                                pos2(
-                                    entire_thing_rect.min.x + cell_width / 2.0,
-                                    entire_thing_rect.min.y + cell_height / 2.0,
-                                ),
-                                Align2::CENTER_CENTER,
-                                counts[index].to_string(),
-                                FontId::monospace(cell_height / 4.0 * 3.0),
-                                Color32::BLACK,
-                            );
-                        }
 
                         let rsp = ui
                             .allocate_rect(
-                                {
-                                    let delta = stroke_width;
-                                    Rect {
-                                        min: entire_thing_rect.min + vec2(delta, delta),
-                                        max: entire_thing_rect.max - vec2(delta, delta),
-                                    }
-                                },
+                                entire_thing_rect,
                                 Sense::CLICK,
                             )
                             .on_hover_cursor(CursorIcon::PointingHand);
@@ -292,7 +265,7 @@ impl App for MinesweeperApp {
                         }
 
                         if column == self.board.get_width() - 1 {
-                            start_y += cell_width;
+                            start_y += cell_size;
                             row += 1;
                         }
                     }
