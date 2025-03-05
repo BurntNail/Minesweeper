@@ -354,8 +354,7 @@ impl Data {
     pub fn game_has_been_won(&self) -> bool {
         let check_all_squares = || {
             (0..self.height)
-                .map(|y| (0..self.width).map(move |x| (x, y)))
-                .flatten()
+                .flat_map(|y| (0..self.width).map(move |x| (x, y)))
                 .all(|pos| {
                     let is_mine = self.mines.contains(&pos);
                     let is_discovered = self.clicked.contains(&pos);
