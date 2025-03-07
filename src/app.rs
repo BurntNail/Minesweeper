@@ -116,7 +116,7 @@ impl App for MinesweeperApp {
                 }),
                 _ => format!("Game in progress for {}s", {
                     self.game_started.map_or(0, |start| {
-                        ctx.request_repaint_after_secs(0.4);
+                        ctx.request_repaint_after_secs(0.25);
                         start.elapsed().as_secs()
                     })
                 }),
