@@ -1,8 +1,8 @@
 use crate::data::{Data, InvalidDataError};
+use egui::{Rect, pos2};
 use rand::rngs::ThreadRng;
 use std::collections::HashSet;
 use std::default::Default;
-use egui::{pos2, Rect};
 
 pub struct Board {
     has_given_up: bool,
@@ -92,7 +92,7 @@ impl Board {
         self.data.number_of_mines
     }
 
-    pub fn total_uninteracted (&self) -> usize {
+    pub fn total_uninteracted(&self) -> usize {
         (0..self.get_width())
             .flat_map(|x| (0..self.get_height()).map(move |y| (x, y)))
             .filter(|pos| !(self.data.clicked.contains(pos) || self.data.flagged.contains(pos)))
@@ -116,8 +116,7 @@ impl Board {
     }
 
     pub fn toggle_flag(&mut self, pos: (usize, usize)) {
-        if self.game_has_been_won() || self.game_has_been_lost()
-        {
+        if self.game_has_been_won() || self.game_has_been_lost() {
             return;
         }
         self.data.toggle_flag(pos);
@@ -196,12 +195,12 @@ pub enum GridElementType {
 }
 
 impl RenderedGridElement {
-    pub fn to_uv (self, count: u8, game_is_over: bool) -> Rect {
+    pub fn to_uv(self, count: u8, game_is_over: bool) -> Rect {
         let rect = |x, y| {
             let (x, y) = (x as f32, y as f32);
             Rect {
                 min: pos2(0.25 * x, 0.25 * y),
-                max: pos2(0.25 * (x + 1.0), 0.25 * (y + 1.0))
+                max: pos2(0.25 * (x + 1.0), 0.25 * (y + 1.0)),
             }
         };
 
@@ -215,7 +214,7 @@ impl RenderedGridElement {
                 6 => rect(1, 1),
                 7 => rect(2, 1),
                 8 => rect(3, 1),
-                _ => rect(0, 2)
+                _ => rect(0, 2),
             };
         }
 
@@ -231,7 +230,7 @@ impl RenderedGridElement {
             GridElementType::Exploded => rect(3, 3),
             GridElementType::Discovered => rect(0, 2),
             GridElementType::Undiscovered => rect(1, 2),
-            GridElementType::Mine => rect(2, 3)
+            GridElementType::Mine => rect(2, 3),
         }
     }
 }

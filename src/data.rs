@@ -90,7 +90,11 @@ impl TryFrom<String> for Data {
             Some('y') => true,
             Some('n') => false,
             None => return Err(DataReadError::NotEnoughData),
-            _ => return Err(DataReadError::InvalidDataFound(InvalidDataError::TooSmallHeight))
+            _ => {
+                return Err(DataReadError::InvalidDataFound(
+                    InvalidDataError::TooSmallHeight,
+                ));
+            }
         };
 
         let mut get_numbers = |n| {
@@ -112,7 +116,9 @@ impl TryFrom<String> for Data {
             Ok::<_, DataReadError>(numbers)
         };
 
-        let [width, height, n_flagged, n_clicked, n_mines] = get_numbers(5)?.try_into().map_err(DataReadError::UnableToConvertVec)?;
+        let [width, height, n_flagged, n_clicked, n_mines] = get_numbers(5)?
+            .try_into()
+            .map_err(DataReadError::UnableToConvertVec)?;
 
         if width <= 1 {
             return Err(DataReadError::InvalidDataFound(
@@ -131,8 +137,12 @@ impl TryFrom<String> for Data {
 
             let mut get_hashset = |count| {
                 (0..count)
-                    .into_iter()
-                    .map(|_i| numbers.pop_front().map(|index| Data::index_to_coords(index, width)).ok_or(DataReadError::NotEnoughData))
+                    .map(|_i| {
+                        numbers
+                            .pop_front()
+                            .map(|index| Self::index_to_coords(index, width))
+                            .ok_or(DataReadError::NotEnoughData)
+                    })
                     .collect::<Result<_, _>>()
             };
 
@@ -163,9 +173,7 @@ impl TryFrom<String> for Data {
 }
 
 impl From<Data> for String {
-    fn from(
-        data: Data,
-    ) -> Self {
+    fn from(data: Data) -> Self {
         println!("serialising shitty hash: {}", data.shitty_hash());
 
         let Data {
@@ -190,9 +198,13 @@ impl From<Data> for String {
         for n in [width, height, flagged.len(), clicked.len(), n_mines]
             .into_iter()
             .chain(
-                flagged.into_iter().chain(clicked).chain(mines)
-                    .map(|pos| Data::coords_to_index(pos, width))
-            ) {
+                flagged
+                    .into_iter()
+                    .chain(clicked)
+                    .chain(mines)
+                    .map(|pos| Data::coords_to_index(pos, width)),
+            )
+        {
             output.push_str(&format!("{n},")); //make sure to add a trailing comma so the last number gets parsed!
         }
 
@@ -211,25 +223,27 @@ impl Data {
         y * width + x
     }
 
-    pub fn shitty_hash (&self) -> usize {
+    pub fn shitty_hash(&self) -> usize {
         let sum = |iter: &HashSet<_>, multiplier| {
-            iter.
-                iter()
+            iter.iter()
                 .copied()
                 .map(|pos| Self::coords_to_index(pos, self.width) * multiplier)
                 .sum::<usize>()
         };
 
-        self.height * self.width * self.number_of_mines +
-            sum(&self.mines, 1) +
-            sum(&self.clicked, 3) +
-            sum(&self.flagged, 5)
+        self.height * self.width * self.number_of_mines
+            + sum(&self.mines, 1)
+            + sum(&self.clicked, 3)
+            + sum(&self.flagged, 5)
     }
 
     pub fn toggle_flag(&mut self, pos: (usize, usize)) {
         if self.flagged.contains(&pos) {
             self.flagged.remove(&pos);
-        } else if self.flagged.len() < self.mines.len() && !self.mines.is_empty() && !self.clicked.contains(&pos) {
+        } else if self.flagged.len() < self.mines.len()
+            && !self.mines.is_empty()
+            && !self.clicked.contains(&pos)
+        {
             self.flagged.insert(pos);
         }
     }
@@ -242,11 +256,19 @@ impl Data {
         //0, 0 is top left
         let left = x.checked_sub(1);
         let horiz_middle = Some(x);
-        let right = if x < (self.width - 1) { Some(x + 1) } else { None };
+        let right = if x < (self.width - 1) {
+            Some(x + 1)
+        } else {
+            None
+        };
 
         let above = y.checked_sub(1);
         let vert_middle = Some(y);
-        let below = if y < (self.height - 1) { Some(y + 1) } else { None };
+        let below = if y < (self.height - 1) {
+            Some(y + 1)
+        } else {
+            None
+        };
 
         let optional = |neighbour| -> Option<(usize, usize)> {
             include_diagonals.then_some(neighbour).flatten()
@@ -266,16 +288,14 @@ impl Data {
     pub fn click(&mut self, pos: (usize, usize), rng: &mut impl Rng) -> bool {
         //if mines are empty, we need to add more mines!
         if self.mines.is_empty() {
-            let neighbours =
-                Some(pos)
-                    .into_iter()
-                    //TODO: decide whether to keep this or not
-                    // .chain(self.get_neighbours(pos, true))
-                    .collect::<Vec<_>>();
+            let neighbours = std::iter::once(pos)
+                //TODO: decide whether to keep this or not
+                // .chain(self.get_neighbours(pos, true))
+                .collect::<Vec<_>>();
 
             self.mines.extend(
                 (0..(self.width * self.height))
-                    .map(|x| Data::index_to_coords(x, self.width))
+                    .map(|x| Self::index_to_coords(x, self.width))
                     .filter(|x| !neighbours.contains(x))
                     .choose_multiple(rng, self.number_of_mines),
             );
@@ -397,8 +417,7 @@ impl Data {
                     let is_mine = self.mines.contains(&pos);
                     let is_discovered = self.clicked.contains(&pos);
 
-                    is_discovered && !is_mine
-                     || !is_discovered && is_mine
+                    is_discovered && !is_mine || !is_discovered && is_mine
                 })
         };
 

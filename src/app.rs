@@ -1,11 +1,14 @@
-use std::io::Cursor;
-use crate::board::{Board};
+use crate::board::Board;
 use crate::data::{Data, InvalidDataError};
-use eframe::epaint::{ColorImage};
+use eframe::epaint::ColorImage;
 use eframe::{App, CreationContext, Frame, Storage};
-use egui::{Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, Widget, pos2, TextureHandle, TextureOptions};
-use std::time::{Duration, Instant};
+use egui::{
+    Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, TextureHandle, TextureOptions,
+    Widget, pos2,
+};
 use image::{ImageFormat, ImageReader};
+use std::io::Cursor;
+use std::time::{Duration, Instant};
 
 ///Struct to keep a hold of all things related to the minesweeper UI/app
 pub struct MinesweeperApp {
@@ -42,16 +45,17 @@ impl MinesweeperApp {
 
             let bytes = Cursor::new(BYTES);
 
-            let dynimage = ImageReader::with_format(bytes, ImageFormat::Png).decode().expect("unable to decode image").to_rgba8();
+            let dynimage = ImageReader::with_format(bytes, ImageFormat::Png)
+                .decode()
+                .expect("unable to decode image")
+                .to_rgba8();
             let (w, h) = dynimage.dimensions();
             let pixels = dynimage.as_flat_samples();
-            let img = ColorImage::from_rgba_unmultiplied([w as usize, h as usize], pixels.as_slice());
+            let img =
+                ColorImage::from_rgba_unmultiplied([w as usize, h as usize], pixels.as_slice());
 
-            cc.egui_ctx.load_texture(
-                "winminexptex",
-                img,
-                TextureOptions::NEAREST
-            )
+            cc.egui_ctx
+                .load_texture("winminexptex", img, TextureOptions::NEAREST)
         };
 
         //but if we can get a data key
@@ -171,7 +175,10 @@ impl App for MinesweeperApp {
                         .logarithmic(true)
                         .ui(ui);
 
-                    ui.label(format!("Undiscovered & Unflagged: {}", self.board.total_uninteracted()));
+                    ui.label(format!(
+                        "Undiscovered & Unflagged: {}",
+                        self.board.total_uninteracted()
+                    ));
                 }
                 ui.end_row();
             });
@@ -206,10 +213,8 @@ impl App for MinesweeperApp {
 
                     let cell_size = rect.width() / board_width;
 
-                    let start_x =
-                        rect.left() + (rect.width() - width_to_be_used) / 2.0;
-                    let mut start_y =
-                        rect.top() + (rect.height() - height_to_be_used) / 2.0;
+                    let start_x = rect.left() + (rect.width() - width_to_be_used) / 2.0;
+                    let mut start_y = rect.top() + (rect.height() - height_to_be_used) / 2.0;
 
                     let counts = {
                         if self.cached_counts.is_empty() {
@@ -221,7 +226,8 @@ impl App for MinesweeperApp {
                         self.cached_counts.as_slice()
                     };
 
-                    let game_is_over = self.board.game_has_been_won() || self.board.game_has_been_lost();
+                    let game_is_over =
+                        self.board.game_has_been_won() || self.board.game_has_been_lost();
 
                     let mut row = 0;
                     for (index, cell) in self.board.render().into_iter().enumerate() {
@@ -238,15 +244,15 @@ impl App for MinesweeperApp {
                         ui.painter().image(
                             self.image_handle.id(),
                             entire_thing_rect,
-                            cell.to_uv(counts.get(index).copied().unwrap_or_default(), game_is_over),
-                            Color32::WHITE
+                            cell.to_uv(
+                                counts.get(index).copied().unwrap_or_default(),
+                                game_is_over,
+                            ),
+                            Color32::WHITE,
                         );
 
                         let rsp = ui
-                            .allocate_rect(
-                                entire_thing_rect,
-                                Sense::CLICK,
-                            )
+                            .allocate_rect(entire_thing_rect, Sense::CLICK)
                             .on_hover_cursor(CursorIcon::PointingHand);
 
                         let pos = (column, row);
