@@ -112,7 +112,7 @@ impl App for MinesweeperApp {
                 }),
                 _ => format!("Game in progress for {}s", {
                     self.game_started.map_or(0, |start| {
-                        ctx.request_repaint_after_secs(1.0);
+                        ctx.request_repaint_after_secs(0.4);
                         start.elapsed().as_secs()
                     })
                 }),
@@ -170,6 +170,8 @@ impl App for MinesweeperApp {
                     Slider::new(&mut self.next_mines, 1..=max_mines)
                         .logarithmic(true)
                         .ui(ui);
+
+                    ui.label(format!("Undiscovered & Unflagged: {}", self.board.total_uninteracted()));
                 }
                 ui.end_row();
             });

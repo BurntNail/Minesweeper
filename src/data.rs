@@ -17,7 +17,8 @@ pub struct Data {
 #[derive(Debug)]
 pub enum DataReadError {
     UnableToParseInteger(ParseIntError),
-    NotEnoughElements(usize, usize),
+    UnableToConvertVec(Vec<usize>),
+    NotEnoughData,
     InvalidCharacter(char),
     InvalidDataFound(InvalidDataError),
 }
@@ -32,9 +33,10 @@ impl Display for DataReadError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UnableToParseInteger(e) => write!(f, "Error parsing integer: {e}"),
-            Self::NotEnoughElements(found, ex) => {
-                write!(f, "Not enough elements compared to length counts provided - expected {ex}, found {found}")
+            Self::NotEnoughData => {
+                write!(f, "Not enough data present in the string to fully parse")
             }
+            Self::UnableToConvertVec(v) => write!(f, "Unable to convert stats vec to array: {v:?}"),
             Self::InvalidCharacter(ch) => {
                 write!(f, "Found non-integer, non-comma character: {ch:?}")
             }
@@ -59,6 +61,7 @@ pub enum InvalidDataError {
     TooSmallHeight,
     ZeroMines,
     TooManyMines,
+    BadCharacter,
 }
 
 impl Display for InvalidDataError {
@@ -68,6 +71,7 @@ impl Display for InvalidDataError {
             Self::TooSmallWidth => write!(f, "Found data 1 or less width"),
             Self::TooSmallHeight => write!(f, "Found data 1 or less height"),
             Self::TooManyMines => write!(f, "Found data with more mines than allowed mine spaces"),
+            Self::BadCharacter => write!(f, "Found data with unknown character in serialised form"),
         }
     }
 }
@@ -79,100 +83,120 @@ impl TryFrom<String> for Data {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         //i could do a big state machine, but i cba and this works well enough
-
         let mut accum = String::new();
         let mut chars = value.chars();
 
-        let [width, height, n_flagged, n_clicked, n_mines] = {
-            let mut lengths = Vec::with_capacity(5);
+        let should_contain_data = match chars.next() {
+            Some('y') => true,
+            Some('n') => false,
+            None => return Err(DataReadError::NotEnoughData),
+            _ => return Err(DataReadError::InvalidDataFound(InvalidDataError::TooSmallHeight))
+        };
+
+        let mut get_numbers = |n| {
+            let mut numbers: Vec<usize> = Vec::with_capacity(n);
 
             for ch in &mut chars {
                 if ch.is_ascii_digit() {
                     accum.push(ch);
                 } else {
-                    lengths.push(accum.parse()?);
+                    numbers.push(accum.parse()?);
                     accum.clear();
 
-                    if lengths.len() == 5 {
+                    if numbers.len() == n {
                         break;
                     }
                 }
             }
 
-            lengths.try_into().unwrap()
+            Ok::<_, DataReadError>(numbers)
         };
+
+        let [width, height, n_flagged, n_clicked, n_mines] = get_numbers(5)?.try_into().map_err(DataReadError::UnableToConvertVec)?;
 
         if width <= 1 {
             return Err(DataReadError::InvalidDataFound(
                 InvalidDataError::TooSmallWidth,
             ));
-        } else if n_mines == 0 {
-            return Err(DataReadError::InvalidDataFound(InvalidDataError::ZeroMines));
         } else if n_mines > (width * height - 1) {
             return Err(DataReadError::InvalidDataFound(
                 InvalidDataError::TooManyMines,
             ));
         }
 
-        let mut numbers = VecDeque::with_capacity(n_flagged + n_clicked + n_mines);
+        let (flagged, clicked, mines) = if should_contain_data {
+            //according to the docs, this conversion is guaranteed not to re-allocate and will take O(1)
+            let mut numbers: VecDeque<_> = get_numbers(n_flagged + n_clicked + n_mines)?.into();
+            debug_assert_eq!(numbers.len(), n_flagged + n_clicked + n_mines);
 
-        //parse numbers
-        for ch in chars {
-            if ch.is_ascii_digit() {
-                accum.push(ch);
-            } else {
-                numbers.push_back(accum.parse()?);
-                accum.clear();
-            }
-        }
-        numbers.push_back(accum.parse()?);
+            let mut get_hashset = |count| {
+                (0..count)
+                    .into_iter()
+                    .map(|_i| numbers.pop_front().map(|index| Data::index_to_coords(index, width)).ok_or(DataReadError::NotEnoughData))
+                    .collect::<Result<_, _>>()
+            };
 
-        assert_eq!(numbers.len(), n_flagged + n_clicked + n_mines);
+            let flagged = get_hashset(n_flagged)?;
+            let clicked = get_hashset(n_clicked)?;
+            let mines = get_hashset(n_mines)?;
 
-        let mut get_hashset = |count| {
-            (0..count)
-                .into_iter()
-                .map(|i| numbers.pop_front().ok_or(DataReadError::NotEnoughElements(i, count)).map(|index| Data::index_to_coords(index, width)))
-                .collect::<Result<_, _>>()
+            debug_assert!(numbers.is_empty());
+
+            (flagged, clicked, mines)
+        } else {
+            (HashSet::new(), HashSet::new(), HashSet::new())
         };
 
-        let flagged = get_hashset(n_flagged)?;
-        let clicked = get_hashset(n_clicked)?;
-        let mines = get_hashset(n_mines)?;
-
-        assert!(numbers.is_empty());
-
-        Ok(Self {
+        let res = Self {
             width,
             height,
             number_of_mines: n_mines,
             flagged,
             clicked,
             mines,
-        })
+        };
+
+        println!("desered shitty hash: {}", res.shitty_hash());
+
+        Ok(res)
     }
 }
 
 impl From<Data> for String {
     fn from(
-        Data {
+        data: Data,
+    ) -> Self {
+        println!("serialising shitty hash: {}", data.shitty_hash());
+
+        let Data {
             width,
             height,
-            number_of_mines: _,
+            number_of_mines,
             flagged,
             clicked,
             mines,
-        }: Data,
-    ) -> Self {
-        let numbers: Vec<_> = [width, height, flagged.len(), clicked.len(), mines.len()]
+        } = data;
+
+        let (mut output, n_mines) = if mines.is_empty() {
+            debug_assert!(mines.is_empty());
+            debug_assert!(flagged.is_empty());
+            debug_assert!(clicked.is_empty());
+
+            ('n'.to_string(), number_of_mines)
+        } else {
+            ('y'.to_string(), mines.len())
+        };
+
+        for n in [width, height, flagged.len(), clicked.len(), n_mines]
             .into_iter()
             .chain(
                 flagged.into_iter().chain(clicked).chain(mines)
                     .map(|pos| Data::coords_to_index(pos, width))
-            )
-            .map(|x| x.to_string())
-            .collect();
-        numbers.join(",")
+            ) {
+            output.push_str(&format!("{n},")); //make sure to add a trailing comma so the last number gets parsed!
+        }
+
+        output
     }
 }
 
@@ -187,10 +211,25 @@ impl Data {
         y * width + x
     }
 
+    pub fn shitty_hash (&self) -> usize {
+        let sum = |iter: &HashSet<_>, multiplier| {
+            iter.
+                iter()
+                .copied()
+                .map(|pos| Self::coords_to_index(pos, self.width) * multiplier)
+                .sum::<usize>()
+        };
+
+        self.height * self.width * self.number_of_mines +
+            sum(&self.mines, 1) +
+            sum(&self.clicked, 3) +
+            sum(&self.flagged, 5)
+    }
+
     pub fn toggle_flag(&mut self, pos: (usize, usize)) {
         if self.flagged.contains(&pos) {
             self.flagged.remove(&pos);
-        } else if self.flagged.len() < self.mines.len() {
+        } else if self.flagged.len() < self.mines.len() && !self.mines.is_empty() && !self.clicked.contains(&pos) {
             self.flagged.insert(pos);
         }
     }
@@ -203,11 +242,11 @@ impl Data {
         //0, 0 is top left
         let left = x.checked_sub(1);
         let horiz_middle = Some(x);
-        let right = if x < self.width { Some(x + 1) } else { None };
+        let right = if x < (self.width - 1) { Some(x + 1) } else { None };
 
         let above = y.checked_sub(1);
         let vert_middle = Some(y);
-        let below = if y < self.height { Some(y + 1) } else { None };
+        let below = if y < (self.height - 1) { Some(y + 1) } else { None };
 
         let optional = |neighbour| -> Option<(usize, usize)> {
             include_diagonals.then_some(neighbour).flatten()
@@ -227,10 +266,17 @@ impl Data {
     pub fn click(&mut self, pos: (usize, usize), rng: &mut impl Rng) -> bool {
         //if mines are empty, we need to add more mines!
         if self.mines.is_empty() {
+            let neighbours =
+                Some(pos)
+                    .into_iter()
+                    //TODO: decide whether to keep this or not
+                    // .chain(self.get_neighbours(pos, true))
+                    .collect::<Vec<_>>();
+
             self.mines.extend(
                 (0..(self.width * self.height))
                     .map(|x| Data::index_to_coords(x, self.width))
-                    .filter(|x| *x != pos)
+                    .filter(|x| !neighbours.contains(x))
                     .choose_multiple(rng, self.number_of_mines),
             );
         }

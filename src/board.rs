@@ -92,6 +92,13 @@ impl Board {
         self.data.number_of_mines
     }
 
+    pub fn total_uninteracted (&self) -> usize {
+        (0..self.get_width())
+            .flat_map(|x| (0..self.get_height()).map(move |y| (x, y)))
+            .filter(|pos| !(self.data.clicked.contains(pos) || self.data.flagged.contains(pos)))
+            .count()
+    }
+
     pub fn flags_placed(&self) -> usize {
         self.data.flagged.len()
     }
@@ -109,7 +116,7 @@ impl Board {
     }
 
     pub fn toggle_flag(&mut self, pos: (usize, usize)) {
-        if self.game_has_been_won() || self.game_has_been_lost() || self.data.clicked.contains(&pos)
+        if self.game_has_been_won() || self.game_has_been_lost()
         {
             return;
         }
