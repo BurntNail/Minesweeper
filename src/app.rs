@@ -1,5 +1,5 @@
 use crate::board::Board;
-use crate::data::{Data, InvalidDataError};
+use crate::data::Data;
 use eframe::epaint::ColorImage;
 use eframe::{App, CreationContext, Frame, Storage};
 use egui::{
@@ -9,12 +9,14 @@ use egui::{
 use image::{ImageFormat, ImageReader};
 use std::io::Cursor;
 use std::time::{Duration, Instant};
+use crate::ser::{deserialise_extra_time, serialise_extra_time, InvalidDataError};
 
 ///Struct to keep a hold of all things related to the minesweeper UI/app
 pub struct MinesweeperApp {
     ///The actual minesweeper board
     board: Board,
     ///When the game started - can be [`None`] if nothing has been placed yet
+    extra_time: Duration,
     game_started: Option<Instant>,
     ///When the game finished - will be [`None`] until the game finishes.
     game_stopped: Option<Instant>,
@@ -39,6 +41,8 @@ impl MinesweeperApp {
     ) -> Result<Self, InvalidDataError> {
         //assume we can't get any previous data
         let mut previous_data = None;
+        let mut extra_time = Duration::new(0, 0);
+        let mut game_started = None;
 
         let image_handle = {
             const BYTES: &[u8] = include_bytes!("../WinmineXP.png");
@@ -58,15 +62,27 @@ impl MinesweeperApp {
                 .load_texture("winminexptex", img, TextureOptions::NEAREST)
         };
 
-        //but if we can get a data key
-        if let Some(data) = cc.storage.and_then(|x| x.get_string("data")) {
-            //and we can parse it
-            match Data::try_from(data) {
-                //then now we have the previous data
-                Ok(x) => previous_data = Some(x),
-                Err(e) => {
-                    //if not, then we can leave `previous_data` as is, and just print an error with why it failed
-                    eprintln!("Error parsing previous data: {e:?}");
+        if let Some(storage) = cc.storage {
+            if let Some(data) = storage.get_string("data") {
+                match Data::try_from(data) {
+                    //then now we have the previous data
+                    Ok(x) => previous_data = Some(x),
+                    Err(e) => {
+                        //if not, then we can leave `previous_data` as is, and just print an error with why it failed
+                        eprintln!("Error parsing previous data: {e:?}");
+                    }
+                }
+            }
+
+            if let Some(sered) = storage.get_string("extratime") {
+                match deserialise_extra_time(sered) {
+                    Ok(dur) => {
+                        if !dur.is_zero() {
+                            extra_time = dur;
+                            game_started = Some(Instant::now());
+                        }
+                    },
+                    Err(e) => eprintln!("Error deser-ing extra time: {e:?}")
                 }
             }
         }
@@ -83,11 +99,12 @@ impl MinesweeperApp {
             next_height: board.get_height(),
             next_mines: board.total_mines(),
             board_rect: Rect::ZERO,
-            game_started: None,
+            game_started,
             game_stopped: None,
             cached_counts: board.generate_counts().unwrap_or_default(),
             board,
             image_handle,
+            extra_time,
         })
     }
 }
@@ -104,21 +121,21 @@ impl App for MinesweeperApp {
                     "Game Lost: {} correct flag(s) in {:?}",
                     self.board.successfully_flagged(),
                     match self.game_started.zip(self.game_stopped) {
-                        Some((start, stop)) => stop - start,
-                        None => Duration::from_secs(0),
+                        Some((start, stop)) => stop - start + self.extra_time,
+                        None => self.extra_time,
                     }
                 ),
                 (_, true) => format!("Game Won in {:?}", {
                     match self.game_started.zip(self.game_stopped) {
-                        Some((start, stop)) => stop - start,
-                        None => Duration::from_secs(u64::MAX),
+                        Some((start, stop)) => stop - start + self.extra_time,
+                        None => self.extra_time,
                     }
                 }),
                 _ => format!("Game in progress for {}s", {
-                    self.game_started.map_or(0, |start| {
+                    (self.game_started.map_or(Duration::new(0, 0), |start| {
                         ctx.request_repaint_after_secs(0.25);
-                        start.elapsed().as_secs()
-                    })
+                        start.elapsed()
+                    }) + self.extra_time).as_secs()
                 }),
             };
 
@@ -144,6 +161,7 @@ impl App for MinesweeperApp {
                     if reset_vars {
                         self.game_started = None;
                         self.game_stopped = None;
+                        self.extra_time = Duration::new(0, 0);
                         self.cached_counts.clear();
                     }
                 }
@@ -290,5 +308,14 @@ impl App for MinesweeperApp {
     fn save(&mut self, storage: &mut dyn Storage) {
         let data = String::from(self.board.get_data().clone());
         storage.set_string("data", data);
+
+        let extra_time = serialise_extra_time(match (self.game_started, self.game_stopped) {
+            (None, None) => Duration::new(0, 0),
+            (Some(started), None) => started.elapsed() + self.extra_time,
+            (None, Some(_stopped)) => unreachable!("cannot have stopped w/o started"),
+            (Some(_started), Some(_stopped)) => Duration::new(0, 0)
+        });
+
+        storage.set_string("extratime", extra_time);
     }
 }

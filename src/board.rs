@@ -1,8 +1,9 @@
-use crate::data::{Data, InvalidDataError};
+use crate::data::Data;
 use egui::{Rect, pos2};
 use rand::rngs::ThreadRng;
 use std::collections::HashSet;
 use std::default::Default;
+use crate::ser::InvalidDataError;
 
 pub struct Board {
     has_given_up: bool,
@@ -177,6 +178,10 @@ impl Board {
     pub fn generate_counts(&self) -> Option<Vec<u8>> {
         self.data.generate_counts()
     }
+
+    // pub fn game_is_in_progress (&self) -> bool {
+    //     !self.data.mines.is_empty()
+    // }
 }
 
 #[derive(Copy, Clone, Debug)]
