@@ -9,14 +9,16 @@ use egui::{
 use image::{ImageFormat, ImageReader};
 use std::io::Cursor;
 use std::time::{Duration, Instant};
+use crate::egui_fps::FpsCounter;
 use crate::ser::{deserialise_extra_time, serialise_extra_time, InvalidDataError};
 
 ///Struct to keep a hold of all things related to the minesweeper UI/app
 pub struct MinesweeperApp {
     ///The actual minesweeper board
     board: Board,
-    ///When the game started - can be [`None`] if nothing has been placed yet
+    ///Any extra time to add to the count from previous sessions
     extra_time: Duration,
+    ///When the game started - can be [`None`] if nothing has been placed yet
     game_started: Option<Instant>,
     ///When the game finished - will be [`None`] until the game finishes.
     game_stopped: Option<Instant>,
@@ -28,8 +30,11 @@ pub struct MinesweeperApp {
     next_height: usize,
     ///The number of mines in the next board to be created
     next_mines: usize,
+    ///A cached copy of the hints used for how many mines are nearby
     cached_counts: Vec<u8>,
+    ///A handle to the sprite atlas
     image_handle: TextureHandle,
+    fps_counter: FpsCounter<50>,
 }
 
 impl MinesweeperApp {
@@ -45,16 +50,17 @@ impl MinesweeperApp {
         let mut game_started = None;
 
         let image_handle = {
-            const BYTES: &[u8] = include_bytes!("../WinmineXP.png");
+            //store the bytes inside the binary
+            static BYTES: &[u8] = include_bytes!("../WinmineXP.png");
 
-            let bytes = Cursor::new(BYTES);
-
-            let dynimage = ImageReader::with_format(bytes, ImageFormat::Png)
+            //create a cursor so that we fufill the io::Seek req
+            //have to use `with_format` as no file name to hint the type - magic bytes don't seem to work?
+            let image = ImageReader::with_format(Cursor::new(BYTES), ImageFormat::Png)
                 .decode()
-                .expect("unable to decode image")
-                .to_rgba8();
-            let (w, h) = dynimage.dimensions();
-            let pixels = dynimage.as_flat_samples();
+                .expect("unable to decode image") //panic because fatal error in init
+                .to_rgba8(); //convert to rgba8 so when we get the flat samples it's easy to give it to the egui image
+            let (w, h) = image.dimensions();
+            let pixels = image.as_flat_samples();
             let img =
                 ColorImage::from_rgba_unmultiplied([w as usize, h as usize], pixels.as_slice());
 
@@ -62,8 +68,11 @@ impl MinesweeperApp {
                 .load_texture("winminexptex", img, TextureOptions::NEAREST)
         };
 
+        //if we have storage
         if let Some(storage) = cc.storage {
+            //try to get the data
             if let Some(data) = storage.get_string("data") {
+                //and parse it
                 match Data::try_from(data) {
                     //then now we have the previous data
                     Ok(x) => previous_data = Some(x),
@@ -74,9 +83,12 @@ impl MinesweeperApp {
                 }
             }
 
+            //try to get previous session time
             if let Some(sered) = storage.get_string("extratime") {
+                //and deserialise it
                 match deserialise_extra_time(sered) {
                     Ok(dur) => {
+                        //if it isn't zero, assume we're still playing and set the start time to now
                         if !dur.is_zero() {
                             extra_time = dur;
                             game_started = Some(Instant::now());
@@ -94,6 +106,11 @@ impl MinesweeperApp {
             Board::from_previous_data,
         )?;
 
+        //if the game is over, cancel the start time because otherwise it'll cause shenanigans
+        if board.game_has_been_lost() || board.game_has_been_won() {
+            game_started = None;
+        }
+
         Ok(Self {
             next_width: board.get_width(),
             next_height: board.get_height(),
@@ -105,6 +122,7 @@ impl MinesweeperApp {
             board,
             image_handle,
             extra_time,
+            fps_counter: FpsCounter::new(),
         })
     }
 }
@@ -112,36 +130,37 @@ impl MinesweeperApp {
 impl App for MinesweeperApp {
     #[allow(clippy::too_many_lines)]
     fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
+        self.fps_counter.start_timer();
         egui::TopBottomPanel::top("top panel").show(ctx, |ui| {
-            let status = match (
-                self.board.game_has_been_lost(),
-                self.board.game_has_been_won(),
-            ) {
-                (true, _) => format!(
-                    "Game Lost: {} correct flag(s) in {:?}",
-                    self.board.successfully_flagged(),
-                    match self.game_started.zip(self.game_stopped) {
-                        Some((start, stop)) => stop - start + self.extra_time,
-                        None => self.extra_time,
-                    }
-                ),
-                (_, true) => format!("Game Won in {:?}", {
-                    match self.game_started.zip(self.game_stopped) {
-                        Some((start, stop)) => stop - start + self.extra_time,
-                        None => self.extra_time,
-                    }
-                }),
-                _ => format!("Game in progress for {}s", {
-                    (self.game_started.map_or(Duration::new(0, 0), |start| {
-                        ctx.request_repaint_after_secs(0.25);
-                        start.elapsed()
-                    }) + self.extra_time).as_secs()
-                }),
-            };
-
+            //start a grid
             Grid::new("top bit grid").show(ui, |ui| {
                 {
-                    ui.label(status);
+                    //get the status text depending on the game state
+                    ui.label(match (
+                        self.board.game_has_been_lost(),
+                        self.board.game_has_been_won(),
+                    ) {
+                        (true, _) => format!(
+                            "Game Lost: {} correct flag(s) in {:?}",
+                            self.board.successfully_flagged(),
+                            match self.game_started.zip(self.game_stopped) {
+                                Some((start, stop)) => stop - start + self.extra_time,
+                                None => self.extra_time,
+                            }
+                        ),
+                        (_, true) => format!("Game Won in {:?}", {
+                            match self.game_started.zip(self.game_stopped) {
+                                Some((start, stop)) => stop - start + self.extra_time,
+                                None => self.extra_time,
+                            }
+                        }),
+                        _ => format!("Game in progress for {}s", {
+                            (self.game_started.map_or(Duration::new(0, 0), |start| {
+                                ctx.request_repaint_after_secs(0.25);
+                                start.elapsed()
+                            }) + self.extra_time).as_secs()
+                        }),
+                    });
 
                     #[allow(clippy::useless_let_if_seq)]
                     let mut reset_vars = false;
@@ -164,6 +183,8 @@ impl App for MinesweeperApp {
                         self.extra_time = Duration::new(0, 0);
                         self.cached_counts.clear();
                     }
+
+                    ui.label(format!("Current Max Frametime: {:?}", self.fps_counter.get_max()));
                 }
                 ui.end_row();
                 {
@@ -203,39 +224,46 @@ impl App for MinesweeperApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let mut inner_rect = Rect::ZERO;
-
+            //get the response (for double-click checking), also wrapping the reset rect
             let rsp = Scene::new()
                 .zoom_range(0.05..=5.0)
                 .show(ui, &mut self.board_rect, |ui| {
+                    //work out the display aspect ratio
                     let mut rect = ui.available_rect_before_wrap();
                     let available_aspect_ratio = rect.width() / rect.height();
 
+                    //work out the board aspect ratio
                     let (board_width, board_height) = (
                         self.board.get_width() as f32,
                         self.board.get_height() as f32,
                     );
                     let board_aspect_ratio = board_width / board_height;
 
+                    //get scale factors for the space to actually use so the board is as big as can be
                     let (sf_x, sf_y) = if available_aspect_ratio > board_aspect_ratio {
                         (available_aspect_ratio / board_aspect_ratio, 1.0)
                     } else {
                         (1.0, board_aspect_ratio / available_aspect_ratio)
                     };
 
+                    //modify the display rect using the factors
                     rect.max.x = rect.min.x + rect.width() / sf_x;
                     rect.max.y = rect.min.y + rect.height() / sf_y;
 
+                    //padding around the edges - 5% on each side
                     let width_to_be_used = rect.width() * 0.9;
                     let height_to_be_used = rect.height() * 0.9;
 
-                    let cell_size = rect.width() / board_width;
+                    let cell_size = width_to_be_used / board_width;
 
                     let start_x = rect.left() + (rect.width() - width_to_be_used) / 2.0;
                     let mut start_y = rect.top() + (rect.height() - height_to_be_used) / 2.0;
 
+                    //get the hints
                     let counts = {
+                        //if we don't have any
                         if self.cached_counts.is_empty() {
+                            //try to regenerate them - this could be `None` if the mines haven't been generated yet
                             if let Some(counts) = self.board.generate_counts() {
                                 self.cached_counts = counts;
                             }
@@ -247,10 +275,12 @@ impl App for MinesweeperApp {
                     let game_is_over =
                         self.board.game_has_been_won() || self.board.game_has_been_lost();
 
+                    let mut column = 0;
                     let mut row = 0;
                     for (index, cell) in self.board.render().into_iter().enumerate() {
-                        let column = index % self.board.get_width();
+                        let pos = (column, row);
 
+                        //work out the rect for the whole cell
                         let entire_thing_rect = Rect {
                             min: pos2(cell_size.mul_add(column as f32, start_x), start_y),
                             max: pos2(
@@ -258,22 +288,24 @@ impl App for MinesweeperApp {
                                 start_y + cell_size,
                             ),
                         };
+                        //get the UV coordinates on the sprite atlas
+                        let uv_rect = cell.to_uv(
+                            counts.get(index).copied().unwrap_or_default(),
+                            game_is_over,
+                        );
 
                         ui.painter().image(
                             self.image_handle.id(),
                             entire_thing_rect,
-                            cell.to_uv(
-                                counts.get(index).copied().unwrap_or_default(),
-                                game_is_over,
-                            ),
+                            uv_rect,
                             Color32::WHITE,
                         );
 
+                        //allocate a rect for checking clicks and making the cursor correct
                         let rsp = ui
                             .allocate_rect(entire_thing_rect, Sense::CLICK)
                             .on_hover_cursor(CursorIcon::PointingHand);
 
-                        let pos = (column, row);
                         if rsp.clicked() {
                             let caused_stop = self.board.click(pos);
 
@@ -283,6 +315,7 @@ impl App for MinesweeperApp {
                             if caused_stop && self.game_stopped.is_none() {
                                 self.game_stopped = Some(Instant::now());
                             }
+
                         } else if rsp.secondary_clicked() {
                             if self.game_started.is_none() {
                                 self.game_started = Some(Instant::now());
@@ -294,15 +327,18 @@ impl App for MinesweeperApp {
                             start_y += cell_size;
                             row += 1;
                         }
+                        column = (column + 1) % self.board.get_width();
                     }
 
-                    inner_rect = ui.min_rect();
+                    ui.min_rect()
                 });
 
             if rsp.response.double_clicked() {
-                self.board_rect = inner_rect;
+                self.board_rect = rsp.inner;
             }
         });
+
+        self.fps_counter.stop_timer();
     }
 
     fn save(&mut self, storage: &mut dyn Storage) {

@@ -257,6 +257,7 @@ impl From<Data> for String {
             )
         {
             output.push_str(&format!("{n},")); //make sure to add a trailing comma so the last number gets parsed!
+            //i originally didn't do this, but it made the deser way easier lol so why not
         }
 
         output
