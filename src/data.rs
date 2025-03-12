@@ -13,6 +13,17 @@ pub struct Data {
 }
 
 impl Data {
+    pub fn new_blank(width: usize, height: usize, number_of_mines: usize) -> Self {
+        Self {
+            width,
+            height,
+            number_of_mines,
+            flagged: HashSet::new(),
+            clicked: HashSet::new(),
+            mines: HashSet::new(),
+        }
+    }
+
     #[inline]
     pub const fn index_to_coords(idx: usize, width: usize) -> (usize, usize) {
         (idx % width, idx / width)
@@ -21,6 +32,20 @@ impl Data {
     #[inline]
     pub const fn coords_to_index((x, y): (usize, usize), width: usize) -> usize {
         y * width + x
+    }
+
+    pub fn total_uninteracted<const FLAGS_ARE_INTERACTION: bool>(&self) -> usize {
+        //for each column
+        (0..self.width)
+            //and each row
+            .flat_map(|x| (0..self.height).map(move |y| (x, y)))
+            //remove every pos that has been clicked/flagged
+            .filter(|pos| {
+                !(self.clicked.contains(pos)
+                    || (self.flagged.contains(pos) && FLAGS_ARE_INTERACTION))
+            })
+            //and count the remaining ones
+            .count()
     }
 
     pub fn shitty_hash(&self) -> usize {
@@ -37,7 +62,7 @@ impl Data {
             + sum(&self.flagged, 5)
     }
 
-    pub fn toggle_flag(&mut self, pos: (usize, usize)) {
+    pub fn toggle_flag(&mut self, pos: (usize, usize)) -> bool {
         if self.flagged.contains(&pos) {
             self.flagged.remove(&pos);
         } else if self.flagged.len() < self.mines.len()
@@ -45,7 +70,11 @@ impl Data {
             && !self.clicked.contains(&pos)
         {
             self.flagged.insert(pos);
+
+            return self.total_uninteracted::<false>() == self.mines.len();
         }
+
+        false
     }
 
     pub fn get_neighbours(
@@ -88,15 +117,10 @@ impl Data {
     pub fn click(&mut self, pos: (usize, usize), rng: &mut impl Rng) -> bool {
         //if mines are empty, we need to add more mines!
         if self.mines.is_empty() {
-            let neighbours = std::iter::once(pos)
-                //TODO: decide whether to keep this or not
-                // .chain(self.get_neighbours(pos, true))
-                .collect::<Vec<_>>();
-
             self.mines.extend(
                 (0..(self.width * self.height))
                     .map(|x| Self::index_to_coords(x, self.width))
-                    .filter(|x| !neighbours.contains(x))
+                    .filter(|x| *x != pos)
                     .choose_multiple(rng, self.number_of_mines),
             );
         }
@@ -117,15 +141,16 @@ impl Data {
         //make a list of potential squares to check - we're collecting it here to be able to add to it later
         let mut neighbours_to_check: Vec<_> = self.get_neighbours(pos, true).collect();
         //we're also building up a list of mines to check for auto-flagging
-        let mut mines_to_double_check = HashSet::new();
+        let mut maybe_auto_flag_these = HashSet::new();
 
         //TODO: DRY on checking
         let mut mine_is_next_to_chosen = false;
-        for current_ntc in &neighbours_to_check {
-            if self.mines.contains(current_ntc) {
-                mines_to_double_check.insert(*current_ntc);
-                mine_is_next_to_chosen = true;
-            }
+        for mine_neighbour in neighbours_to_check
+            .iter()
+            .filter(|x| self.mines.contains(*x))
+        {
+            maybe_auto_flag_these.insert(*mine_neighbour);
+            mine_is_next_to_chosen = true;
         }
 
         //don't expand if we're next to a mine
@@ -136,7 +161,7 @@ impl Data {
         while let Some(neighbour) = neighbours_to_check.pop() {
             //if this square is a mine, add it to the tobechecked list and continue to the next element
             if self.mines.contains(&neighbour) {
-                mines_to_double_check.insert(neighbour);
+                maybe_auto_flag_these.insert(neighbour);
                 continue;
                 //if this square is already clicked or flagged, skip it!
             } else if self.clicked.contains(&neighbour) || self.flagged.contains(&neighbour) {
@@ -157,7 +182,7 @@ impl Data {
                 .copied()
             {
                 has_a_mine_nearby = true;
-                mines_to_double_check.insert(mine);
+                maybe_auto_flag_these.insert(mine);
             }
 
             //if there isn't a mine next to this cell, add the non-flagged non-clicked neighbours to the check list to expand the selection. this is vulnerable to duplicates, but this seems efficient enough rn
@@ -173,7 +198,7 @@ impl Data {
         }
 
         //for all the mines that were neighbours of cells
-        for mine in mines_to_double_check {
+        for mine in maybe_auto_flag_these {
             //if we've clicked all of the adjacent cells
             if self
                 .get_neighbours(mine, true)
@@ -210,23 +235,21 @@ impl Data {
     }
 
     pub fn game_has_been_won(&self) -> bool {
-        let check_all_squares = || {
-            (0..self.height)
-                .flat_map(|y| (0..self.width).map(move |x| (x, y)))
-                .all(|pos| {
-                    let is_mine = self.mines.contains(&pos);
-                    let is_discovered = self.clicked.contains(&pos);
-
-                    is_discovered && !is_mine || !is_discovered && is_mine
-                })
-        };
-
-        //use a closure to allow short-circuiting
-        !self.game_has_been_lost() && !self.mines.is_empty() && check_all_squares()
+        !self.mines.is_empty() //there are mines
+            && self.total_uninteracted::<false>() == self.mines.len() //the number of squares unconfirmed is the same as the number of mines
+            && self.mines.is_disjoint(&self.clicked) //we didn't click on any mines
     }
 
     pub fn game_has_been_lost(&self) -> bool {
         //because iterators are lazy, this method isn't quite as bad as it looks
+        //if you dig into the code, it basically just goes through all of `self.mines`, and finds the first element that `self.clicked` also contains
         self.mines.intersection(&self.clicked).next().is_some()
+    }
+
+    pub fn game_is_over(&self) -> bool {
+        //should maybe be faster than calling `game_has_been_won() || game_has_been_lost()`
+        (!self.mines.is_empty())
+            && (self.mines.intersection(&self.clicked).next().is_some()
+                || self.total_uninteracted::<false>() == self.mines.len())
     }
 }

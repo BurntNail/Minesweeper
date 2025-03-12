@@ -1,5 +1,6 @@
 use crate::board::Board;
-use crate::data::Data;
+use crate::ser::{InvalidDataError, deserialise_extra_time, serialise_extra_time};
+use crate::time_sampler::TimeSampler;
 use eframe::epaint::ColorImage;
 use eframe::{App, CreationContext, Frame, Storage};
 use egui::{
@@ -9,8 +10,6 @@ use egui::{
 use image::{ImageFormat, ImageReader};
 use std::io::Cursor;
 use std::time::{Duration, Instant};
-use crate::egui_fps::FpsCounter;
-use crate::ser::{deserialise_extra_time, serialise_extra_time, InvalidDataError};
 
 ///Struct to keep a hold of all things related to the minesweeper UI/app
 pub struct MinesweeperApp {
@@ -34,7 +33,8 @@ pub struct MinesweeperApp {
     cached_counts: Vec<u8>,
     ///A handle to the sprite atlas
     image_handle: TextureHandle,
-    fps_counter: FpsCounter<50>,
+    ///A sampler for frametimes
+    frametime_counter: TimeSampler<10>,
 }
 
 impl MinesweeperApp {
@@ -73,7 +73,7 @@ impl MinesweeperApp {
             //try to get the data
             if let Some(data) = storage.get_string("data") {
                 //and parse it
-                match Data::try_from(data) {
+                match data.parse() {
                     //then now we have the previous data
                     Ok(x) => previous_data = Some(x),
                     Err(e) => {
@@ -93,8 +93,8 @@ impl MinesweeperApp {
                             extra_time = dur;
                             game_started = Some(Instant::now());
                         }
-                    },
-                    Err(e) => eprintln!("Error deser-ing extra time: {e:?}")
+                    }
+                    Err(e) => eprintln!("Error deser-ing extra time: {e:?}"),
                 }
             }
         }
@@ -107,7 +107,7 @@ impl MinesweeperApp {
         )?;
 
         //if the game is over, cancel the start time because otherwise it'll cause shenanigans
-        if board.game_has_been_lost() || board.game_has_been_won() {
+        if board.game_is_over() {
             game_started = None;
         }
 
@@ -122,7 +122,7 @@ impl MinesweeperApp {
             board,
             image_handle,
             extra_time,
-            fps_counter: FpsCounter::new(),
+            frametime_counter: TimeSampler::new(),
         })
     }
 }
@@ -130,38 +130,42 @@ impl MinesweeperApp {
 impl App for MinesweeperApp {
     #[allow(clippy::too_many_lines)]
     fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
-        self.fps_counter.start_timer();
+        self.frametime_counter.start_timer();
         egui::TopBottomPanel::top("top panel").show(ctx, |ui| {
             //start a grid
             Grid::new("top bit grid").show(ui, |ui| {
                 {
                     //get the status text depending on the game state
-                    ui.label(match (
-                        self.board.game_has_been_lost(),
-                        self.board.game_has_been_won(),
-                    ) {
-                        (true, _) => format!(
-                            "Game Lost: {} correct flag(s) in {:?}",
-                            self.board.successfully_flagged(),
-                            match self.game_started.zip(self.game_stopped) {
-                                Some((start, stop)) => stop - start + self.extra_time,
-                                None => self.extra_time,
-                            }
-                        ),
-                        (_, true) => format!("Game Won in {:?}", {
-                            match self.game_started.zip(self.game_stopped) {
-                                Some((start, stop)) => stop - start + self.extra_time,
-                                None => self.extra_time,
-                            }
-                        }),
-                        _ => format!("Game in progress for {}s", {
-                            (self.game_started.map_or(Duration::new(0, 0), |start| {
-                                ctx.request_repaint_after_secs(0.25);
-                                start.elapsed()
-                            }) + self.extra_time).as_secs()
-                        }),
-                    });
+                    ui.label(
+                        match (
+                            self.board.game_has_been_lost(),
+                            self.board.game_has_been_won(),
+                        ) {
+                            (true, _) => format!(
+                                "Game Lost: {} correct flag(s) in {:?}",
+                                self.board.successfully_flagged(),
+                                match self.game_started.zip(self.game_stopped) {
+                                    Some((start, stop)) => stop - start + self.extra_time,
+                                    None => self.extra_time,
+                                }
+                            ),
+                            (_, true) => format!("Game Won in {:?}", {
+                                match self.game_started.zip(self.game_stopped) {
+                                    Some((start, stop)) => stop - start + self.extra_time,
+                                    None => self.extra_time,
+                                }
+                            }),
+                            _ => format!("Game in progress for {}s", {
+                                (self.game_started.map_or(Duration::new(0, 0), |start| {
+                                    ctx.request_repaint_after_secs(0.25);
+                                    start.elapsed()
+                                }) + self.extra_time)
+                                    .as_secs()
+                            }),
+                        },
+                    );
 
+                    //allow either giving up or resetting
                     #[allow(clippy::useless_let_if_seq)]
                     let mut reset_vars = false;
                     if ui.button("Give Up?").clicked() {
@@ -177,6 +181,7 @@ impl App for MinesweeperApp {
                         reset_vars = true;
                     }
 
+                    //if we did either, reset various variables
                     if reset_vars {
                         self.game_started = None;
                         self.game_stopped = None;
@@ -184,7 +189,11 @@ impl App for MinesweeperApp {
                         self.cached_counts.clear();
                     }
 
-                    ui.label(format!("Current Max Frametime: {:?}", self.fps_counter.get_max()));
+                    //display maximum frametime in sampling interval
+                    ui.label(format!(
+                        "Current Max Frametime: {:?}",
+                        self.frametime_counter.get_max()
+                    ));
                 }
                 ui.end_row();
                 {
@@ -272,8 +281,7 @@ impl App for MinesweeperApp {
                         self.cached_counts.as_slice()
                     };
 
-                    let game_is_over =
-                        self.board.game_has_been_won() || self.board.game_has_been_lost();
+                    let game_is_over = self.board.game_is_over();
 
                     let mut column = 0;
                     let mut row = 0;
@@ -289,10 +297,8 @@ impl App for MinesweeperApp {
                             ),
                         };
                         //get the UV coordinates on the sprite atlas
-                        let uv_rect = cell.to_uv(
-                            counts.get(index).copied().unwrap_or_default(),
-                            game_is_over,
-                        );
+                        let uv_rect = cell
+                            .to_uv(counts.get(index).copied().unwrap_or_default(), game_is_over);
 
                         ui.painter().image(
                             self.image_handle.id(),
@@ -306,21 +312,22 @@ impl App for MinesweeperApp {
                             .allocate_rect(entire_thing_rect, Sense::CLICK)
                             .on_hover_cursor(CursorIcon::PointingHand);
 
+                        let mut interaction_happened = false;
+                        let mut game_is_now_over = false;
+
                         if rsp.clicked() {
-                            let caused_stop = self.board.click(pos);
-
-                            if self.game_started.is_none() {
-                                self.game_started = Some(Instant::now());
-                            }
-                            if caused_stop && self.game_stopped.is_none() {
-                                self.game_stopped = Some(Instant::now());
-                            }
-
+                            interaction_happened = true;
+                            game_is_now_over = self.board.click(pos);
                         } else if rsp.secondary_clicked() {
-                            if self.game_started.is_none() {
-                                self.game_started = Some(Instant::now());
-                            }
-                            self.board.toggle_flag(pos);
+                            interaction_happened = true;
+                            game_is_now_over = self.board.toggle_flag(pos);
+                        }
+
+                        if interaction_happened && self.game_started.is_none() {
+                            self.game_started = Some(Instant::now());
+                        }
+                        if game_is_now_over && self.game_stopped.is_none() {
+                            self.game_stopped = Some(Instant::now());
                         }
 
                         if column == self.board.get_width() - 1 {
@@ -338,7 +345,7 @@ impl App for MinesweeperApp {
             }
         });
 
-        self.fps_counter.stop_timer();
+        self.frametime_counter.stop_timer();
     }
 
     fn save(&mut self, storage: &mut dyn Storage) {
@@ -349,7 +356,7 @@ impl App for MinesweeperApp {
             (None, None) => Duration::new(0, 0),
             (Some(started), None) => started.elapsed() + self.extra_time,
             (None, Some(_stopped)) => unreachable!("cannot have stopped w/o started"),
-            (Some(_started), Some(_stopped)) => Duration::new(0, 0)
+            (Some(_started), Some(_stopped)) => Duration::new(0, 0),
         });
 
         storage.set_string("extratime", extra_time);

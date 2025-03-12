@@ -1,33 +1,23 @@
 use crate::data::Data;
+use crate::ser::InvalidDataError;
 use egui::{Rect, pos2};
 use rand::rngs::ThreadRng;
-use std::collections::HashSet;
 use std::default::Default;
-use crate::ser::InvalidDataError;
 
 pub struct Board {
+    ///Has the player chosen to give up?
     has_given_up: bool,
+    ///The current board data
     data: Data,
+    ///The RNG used for random number generation
     rng: ThreadRng,
-}
-
-impl Data {
-    pub fn new(width: usize, height: usize, number_of_mines: usize) -> Self {
-        Self {
-            width,
-            height,
-            number_of_mines,
-            flagged: HashSet::new(),
-            clicked: HashSet::new(),
-            mines: HashSet::new(),
-        }
-    }
 }
 
 impl TryFrom<Data> for Board {
     type Error = InvalidDataError;
 
     fn try_from(data: Data) -> Result<Self, Self::Error> {
+        //check various invariants for creating from previous data
         if data.width <= 1 {
             return Err(InvalidDataError::TooSmallWidth);
         } else if data.height <= 1 {
@@ -52,19 +42,7 @@ impl Board {
         height: usize,
         number_of_mines: usize,
     ) -> Result<Self, InvalidDataError> {
-        if width <= 1 {
-            return Err(InvalidDataError::TooSmallWidth);
-        } else if number_of_mines == 0 {
-            return Err(InvalidDataError::ZeroMines);
-        } else if number_of_mines > (width * height - 1) {
-            return Err(InvalidDataError::TooManyMines);
-        }
-
-        Ok(Self {
-            has_given_up: false,
-            data: Data::new(width, height, number_of_mines),
-            rng: ThreadRng::default(),
-        })
+        Self::try_from(Data::new_blank(width, height, number_of_mines))
     }
 
     pub fn from_previous_data(data: Data) -> Result<Self, InvalidDataError> {
@@ -79,7 +57,7 @@ impl Board {
             self.data.height,
             self.data.number_of_mines,
         ));
-        self.data = Data::new(new_width, new_height, new_mines);
+        self.data = Data::new_blank(new_width, new_height, new_mines);
     }
 
     pub const fn get_width(&self) -> usize {
@@ -94,10 +72,7 @@ impl Board {
     }
 
     pub fn total_uninteracted(&self) -> usize {
-        (0..self.get_width())
-            .flat_map(|x| (0..self.get_height()).map(move |y| (x, y)))
-            .filter(|pos| !(self.data.clicked.contains(pos) || self.data.flagged.contains(pos)))
-            .count()
+        self.data.total_uninteracted::<true>()
     }
 
     pub fn flags_placed(&self) -> usize {
@@ -116,16 +91,19 @@ impl Board {
         &self.data
     }
 
-    pub fn toggle_flag(&mut self, pos: (usize, usize)) {
-        if self.game_has_been_won() || self.game_has_been_lost() {
-            return;
+    ///returns whether the game is over
+    pub fn toggle_flag(&mut self, pos: (usize, usize)) -> bool {
+        if self.game_is_over() {
+            //ensure can't flag when game over
+            return true;
         }
-        self.data.toggle_flag(pos);
+        self.data.toggle_flag(pos)
     }
 
-    ///returns whether game over has occured
+    ///returns whether the game is over
     pub fn click(&mut self, pos: (usize, usize)) -> bool {
-        if self.game_has_been_won() || self.game_has_been_lost() {
+        if self.game_is_over() {
+            //ensure can't click when game over
             return true;
         }
 
@@ -133,68 +111,66 @@ impl Board {
     }
 
     pub fn render(&self) -> Vec<RenderedGridElement> {
-        let mut grid = Vec::with_capacity(self.data.width * self.data.height);
+        let game_is_over = self.game_is_over();
 
-        for y in 0..self.data.height {
-            for x in 0..self.data.width {
-                let pos = (x, y);
+        //for each column
+        (0..self.data.height)
+            //and each row
+            .flat_map(|y| (0..self.data.width).map(move |x| (x, y)))
+            .map(|pos| {
+                //work out the type, based off of various factors
                 let ty = if self.data.mines.contains(&pos) && self.data.clicked.contains(&pos) {
                     GridElementType::Exploded
-                } else if self.data.mines.contains(&pos)
-                    && (self.game_has_been_lost() || self.game_has_been_won())
-                {
+                } else if self.data.mines.contains(&pos) && game_is_over {
                     GridElementType::Mine
                 } else if self.data.clicked.contains(&pos) {
-                    GridElementType::Discovered
+                    GridElementType::Discovered {
+                        should_display_count: self
+                            .data
+                            .get_neighbours(pos, true)
+                            .any(|neighbour| !self.data.clicked.contains(&neighbour)),
+                    }
                 } else {
                     GridElementType::Undiscovered
                 };
 
-                let should_display_count = ty == GridElementType::Discovered
-                    && self
-                        .data
-                        .get_neighbours(pos, true)
-                        .any(|neighbour| !self.data.clicked.contains(&neighbour));
-
-                grid.push(RenderedGridElement {
+                //and return the rendered grid element
+                RenderedGridElement {
                     ty,
                     flagged: self.data.flagged.contains(&pos),
-                    should_display_count,
-                });
-            }
-        }
-
-        grid
+                }
+            })
+            .collect()
     }
 
     pub fn game_has_been_won(&self) -> bool {
-        !self.game_has_been_lost() && self.data.game_has_been_won()
+        self.data.game_has_been_won()
     }
 
     pub fn game_has_been_lost(&self) -> bool {
         self.has_given_up || self.data.game_has_been_lost()
     }
 
+    pub fn game_is_over(&self) -> bool {
+        self.has_given_up || self.data.game_is_over()
+    }
+
     pub fn generate_counts(&self) -> Option<Vec<u8>> {
         self.data.generate_counts()
     }
-
-    // pub fn game_is_in_progress (&self) -> bool {
-    //     !self.data.mines.is_empty()
-    // }
 }
 
+///A grid element that has been rendered - to display, use the [`RenderedGridElement::to_uv`] method
 #[derive(Copy, Clone, Debug)]
 pub struct RenderedGridElement {
-    pub ty: GridElementType,
-    pub flagged: bool,
-    pub should_display_count: bool,
+    ty: GridElementType,
+    flagged: bool,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum GridElementType {
+enum GridElementType {
     Exploded,
-    Discovered,
+    Discovered { should_display_count: bool },
     Undiscovered,
     Mine,
 }
@@ -209,20 +185,6 @@ impl RenderedGridElement {
             }
         };
 
-        if self.should_display_count {
-            return match count {
-                1 => rect(0, 0),
-                2 => rect(1, 0),
-                3 => rect(2, 0),
-                4 => rect(3, 0),
-                5 => rect(0, 1),
-                6 => rect(1, 1),
-                7 => rect(2, 1),
-                8 => rect(3, 1),
-                _ => rect(0, 2),
-            };
-        }
-
         if self.flagged {
             return if game_is_over && self.ty != GridElementType::Mine {
                 rect(3, 2)
@@ -233,8 +195,26 @@ impl RenderedGridElement {
 
         match self.ty {
             GridElementType::Exploded => rect(3, 3),
-            GridElementType::Discovered => rect(0, 2),
             GridElementType::Undiscovered => rect(1, 2),
+            GridElementType::Discovered {
+                should_display_count,
+            } => {
+                if should_display_count {
+                    match count {
+                        1 => rect(0, 0),
+                        2 => rect(1, 0),
+                        3 => rect(2, 0),
+                        4 => rect(3, 0),
+                        5 => rect(0, 1),
+                        6 => rect(1, 1),
+                        7 => rect(2, 1),
+                        8 => rect(3, 1),
+                        _ => rect(0, 2),
+                    }
+                } else {
+                    rect(0, 2)
+                }
+            }
             GridElementType::Mine => rect(2, 3),
         }
     }

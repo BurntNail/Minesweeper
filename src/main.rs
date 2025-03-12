@@ -12,7 +12,7 @@ mod app;
 mod board;
 mod data;
 mod ser;
-mod egui_fps;
+mod time_sampler;
 
 fn main() {
     //sensible defaults for first time running
