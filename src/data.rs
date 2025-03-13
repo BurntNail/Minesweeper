@@ -117,7 +117,9 @@ impl Data {
         //if mines are empty, we need to add more mines!
         if self.mines.is_empty() {
             self.mines.extend(rng.choose_multiple(
-                (0..(self.width * self.height)).map(|x| Self::index_to_coords(x, self.width)),
+                (0..(self.width * self.height))
+                    .map(|x| Self::index_to_coords(x, self.width))
+                    .filter(|candidate| pos != *candidate),
                 self.number_of_mines,
             ));
         }
