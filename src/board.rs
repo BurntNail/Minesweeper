@@ -1,8 +1,12 @@
+use std::collections::hash_map::Entry;
 use crate::data::Data;
 use crate::ser::InvalidDataError;
-use egui::{Rect, pos2};
+use egui::{Rect, pos2, TextureOptions, ColorImage, TextureHandle, Context};
 use fastrand::Rng;
 use std::default::Default;
+use std::io::Cursor;
+use egui::ahash::HashMap;
+use image::{ImageFormat, ImageReader};
 
 pub struct Board {
     ///Has the player chosen to give up?
@@ -160,7 +164,7 @@ impl Board {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum SpriteAtlas {
     //https://github.com/Minesweeper-World/MS-Texture/blob/main/png/cells/WinmineXP.png
     WinMine,
@@ -171,11 +175,52 @@ pub enum SpriteAtlas {
 impl SpriteAtlas {
     //currently controlled by the RTXOn variant
     pub const MAX_TEXTURE_SIDE: usize = 3072;
+    pub const ALL_VARIANTS: [SpriteAtlas; 2] = [SpriteAtlas::RTXOn, SpriteAtlas::WinMine];
 
     pub fn get_png_bytes (self) -> &'static [u8] {
         match self {
-            SpriteAtlas::WinMine => include_bytes!("../WinmineXP.png"),
-            SpriteAtlas::RTXOn => include_bytes!("../RTXOn.png")
+            Self::WinMine => include_bytes!("../WinmineXP.png"),
+            Self::RTXOn => include_bytes!("../RTXOn.png")
+        }
+    }
+
+    pub fn get_texture_options (self) -> TextureOptions {
+        match self {
+            Self::WinMine => TextureOptions::NEAREST,
+            Self::RTXOn => TextureOptions::LINEAR
+        }
+    }
+
+    pub fn as_static_str (self) -> &'static str {
+        match self {
+            Self::WinMine => "WinMine XP",
+            Self::RTXOn => "RTX On"
+        }
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct TextureCache(HashMap<SpriteAtlas, TextureHandle>);
+
+impl TextureCache {
+    pub fn get (&mut self, atlas: SpriteAtlas, ctx: &Context) -> TextureHandle {
+        match self.0.entry(atlas) {
+            Entry::Occupied(occ) => occ.get().clone(),
+            Entry::Vacant(vac) => {
+                let image = ImageReader::with_format(Cursor::new(atlas.get_png_bytes()), ImageFormat::Png)
+                    .decode()
+                    .expect("unable to decode image") //panic because fatal error in init
+                    .to_rgba8(); //convert to rgba8 so when we get the flat samples it's easy to give it to the egui image
+                let (w, h) = image.dimensions();
+                let pixels = image.as_flat_samples();
+                let img =
+                    ColorImage::from_rgba_unmultiplied([w as usize, h as usize], pixels.as_slice());
+
+                let handle = ctx
+                    .load_texture(atlas.as_static_str(), img, atlas.get_texture_options());
+
+                vac.insert(handle).clone()
+            }
         }
     }
 }

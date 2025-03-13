@@ -1,14 +1,11 @@
-use crate::board::{Board, SpriteAtlas};
+use crate::board::{Board, SpriteAtlas, TextureCache};
 use crate::ser::{InvalidDataError, deserialise_extra_time, serialise_extra_time};
 use crate::time_sampler::TimeSampler;
-use eframe::epaint::ColorImage;
 use eframe::{App, CreationContext, Frame, Storage};
 use egui::{
-    Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, TextureHandle, TextureOptions,
+    Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, TextureHandle,
     Widget, pos2,
 };
-use image::{ImageFormat, ImageReader};
-use std::io::Cursor;
 use std::time::{Duration, Instant};
 
 ///Struct to keep a hold of all things related to the minesweeper UI/app
@@ -36,6 +33,7 @@ pub struct MinesweeperApp {
     ///A sampler for frametimes
     frametime_counter: TimeSampler<10>,
     sprite_atlas: SpriteAtlas,
+    texture_cache: TextureCache,
 }
 
 impl MinesweeperApp {
@@ -50,25 +48,14 @@ impl MinesweeperApp {
         let mut previous_data = None;
         let mut extra_time = Duration::new(0, 0);
         let mut game_started = None;
+        let mut texture_cache = TextureCache::default();
 
         let image_handle = {
             cc.egui_ctx.input_mut(|input_state| {
                 input_state.max_texture_side = SpriteAtlas::MAX_TEXTURE_SIDE;
             });
 
-            //create a cursor so that we fufill the io::Seek req
-            //have to use `with_format` as no file name to hint the type - magic bytes don't seem to work?
-            let image = ImageReader::with_format(Cursor::new(sprite_atlas.get_png_bytes()), ImageFormat::Png)
-                .decode()
-                .expect("unable to decode image") //panic because fatal error in init
-                .to_rgba8(); //convert to rgba8 so when we get the flat samples it's easy to give it to the egui image
-            let (w, h) = image.dimensions();
-            let pixels = image.as_flat_samples();
-            let img =
-                ColorImage::from_rgba_unmultiplied([w as usize, h as usize], pixels.as_slice());
-
-            cc.egui_ctx
-                .load_texture("spriteatlas", img, TextureOptions::NEAREST)
+            texture_cache.get(sprite_atlas, &cc.egui_ctx)
         };
 
         //if we have storage
@@ -127,6 +114,7 @@ impl MinesweeperApp {
             extra_time,
             sprite_atlas,
             frametime_counter: TimeSampler::new(),
+            texture_cache
         })
     }
 }
@@ -136,104 +124,117 @@ impl App for MinesweeperApp {
     fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
         self.frametime_counter.start_timer();
         egui::TopBottomPanel::top("top panel").show(ctx, |ui| {
-            //start a grid
-            Grid::new("top bit grid").show(ui, |ui| {
-                {
-                    //get the status text depending on the game state
-                    ui.label(
-                        match (
-                            self.board.game_has_been_lost(),
-                            self.board.game_has_been_won(),
-                        ) {
-                            (true, _) => format!(
-                                "Game Lost: {} correct flag(s) in {:?}",
-                                self.board.successfully_flagged(),
-                                match self.game_started.zip(self.game_stopped) {
-                                    Some((start, stop)) => stop - start + self.extra_time,
-                                    None => self.extra_time,
-                                }
-                            ),
-                            (_, true) => format!("Game Won in {:?}", {
-                                match self.game_started.zip(self.game_stopped) {
-                                    Some((start, stop)) => stop - start + self.extra_time,
-                                    None => self.extra_time,
-                                }
-                            }),
-                            _ => format!("Game in progress for {}s", {
-                                (self.game_started.map_or(Duration::new(0, 0), |start| {
-                                    ctx.request_repaint_after_secs(0.25);
-                                    start.elapsed()
-                                }) + self.extra_time)
-                                    .as_secs()
-                            }),
-                        },
-                    );
+            ui.horizontal(|ui| {
+                //start a grid
+                Grid::new("top bit grid").show(ui, |ui| {
+                    {
+                        //get the status text depending on the game state
+                        ui.label(
+                            match (
+                                self.board.game_has_been_lost(),
+                                self.board.game_has_been_won(),
+                            ) {
+                                (true, _) => format!(
+                                    "Game Lost: {} correct flag(s) in {:?}",
+                                    self.board.successfully_flagged(),
+                                    match self.game_started.zip(self.game_stopped) {
+                                        Some((start, stop)) => stop - start + self.extra_time,
+                                        None => self.extra_time,
+                                    }
+                                ),
+                                (_, true) => format!("Game Won in {:?}", {
+                                    match self.game_started.zip(self.game_stopped) {
+                                        Some((start, stop)) => stop - start + self.extra_time,
+                                        None => self.extra_time,
+                                    }
+                                }),
+                                _ => format!("Game in progress for {}s", {
+                                    (self.game_started.map_or(Duration::new(0, 0), |start| {
+                                        ctx.request_repaint_after_secs(0.25);
+                                        start.elapsed()
+                                    }) + self.extra_time)
+                                        .as_secs()
+                                }),
+                            },
+                        );
 
-                    //allow either giving up or resetting
-                    #[allow(clippy::useless_let_if_seq)]
-                    let mut reset_vars = false;
-                    if ui.button("Give Up?").clicked() {
-                        self.board.give_up();
-                        reset_vars = true;
-                    }
-                    if ui.button("Reset Game?").clicked() {
-                        self.board.reset(Some((
-                            self.next_width,
-                            self.next_height,
-                            self.next_mines,
-                        )));
-                        reset_vars = true;
-                    }
+                        //allow either giving up or resetting
+                        #[allow(clippy::useless_let_if_seq)]
+                        let mut reset_vars = false;
+                        if ui.button("Give Up?").clicked() {
+                            self.board.give_up();
+                            reset_vars = true;
+                        }
+                        if ui.button("Reset Game?").clicked() {
+                            self.board.reset(Some((
+                                self.next_width,
+                                self.next_height,
+                                self.next_mines,
+                            )));
+                            reset_vars = true;
+                        }
 
-                    //if we did either, reset various variables
-                    if reset_vars {
-                        self.game_started = None;
-                        self.game_stopped = None;
-                        self.extra_time = Duration::new(0, 0);
-                        self.cached_counts.clear();
+                        //if we did either, reset various variables
+                        if reset_vars {
+                            self.game_started = None;
+                            self.game_stopped = None;
+                            self.extra_time = Duration::new(0, 0);
+                            self.cached_counts.clear();
+                        }
                     }
+                    ui.end_row();
+                    {
+                        ui.label("Width: ");
+                        let min_width = self.next_height.min(2);
+                        Slider::new(&mut self.next_width, min_width..=100)
+                            .logarithmic(true)
+                            .ui(ui);
 
-                    //display maximum frametime in sampling interval
+                        ui.label(format!("Flags Placed: {}", self.board.flags_placed()));
+                    }
+                    ui.end_row();
+                    {
+                        ui.label("Height: ");
+                        let min_height = self.next_width.min(2);
+                        Slider::new(&mut self.next_height, min_height..=100)
+                            .logarithmic(true)
+                            .ui(ui);
+
+                        ui.label(format!("Total Mines: {}", self.board.total_mines()));
+                    }
+                    ui.end_row();
+                    {
+                        ui.label("Mines: ");
+                        let max_mines = self.next_width * self.next_height - 1;
+                        Slider::new(&mut self.next_mines, 1..=max_mines)
+                            .logarithmic(true)
+                            .ui(ui);
+
+                        ui.label(format!(
+                            "Undiscovered & Unflagged: {}",
+                            self.board.total_uninteracted()
+                        ));
+                    }
+                    ui.end_row();
+                });
+
+                ui.vertical(|ui| {
                     ui.label(format!(
                         "Current Max Frametime: {:?}",
                         self.frametime_counter.get_max()
                     ));
-                }
-                ui.end_row();
-                {
-                    ui.label("Width: ");
-                    let min_width = self.next_height.min(2);
-                    Slider::new(&mut self.next_width, min_width..=100)
-                        .logarithmic(true)
-                        .ui(ui);
 
-                    ui.label(format!("Flags Placed: {}", self.board.flags_placed()));
-                }
-                ui.end_row();
-                {
-                    ui.label("Height: ");
-                    let min_height = self.next_width.min(2);
-                    Slider::new(&mut self.next_height, min_height..=100)
-                        .logarithmic(true)
-                        .ui(ui);
+                    let old_sprite_atlas = self.sprite_atlas;
 
-                    ui.label(format!("Total Mines: {}", self.board.total_mines()));
-                }
-                ui.end_row();
-                {
-                    ui.label("Mines: ");
-                    let max_mines = self.next_width * self.next_height - 1;
-                    Slider::new(&mut self.next_mines, 1..=max_mines)
-                        .logarithmic(true)
-                        .ui(ui);
+                    for (atlas, name) in SpriteAtlas::ALL_VARIANTS.into_iter().map(|x| (x, x.as_static_str())) {
+                        ui.radio_value(&mut self.sprite_atlas, atlas, name);
+                    }
 
-                    ui.label(format!(
-                        "Undiscovered & Unflagged: {}",
-                        self.board.total_uninteracted()
-                    ));
-                }
-                ui.end_row();
-            });
+                    if old_sprite_atlas != self.sprite_atlas {
+                        self.image_handle = self.texture_cache.get(self.sprite_atlas, ctx);
+                    }
+                });
+            })
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
