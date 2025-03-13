@@ -10,7 +10,7 @@ use std::io::Cursor;
 
 pub struct Board {
     ///Has the player chosen to give up?
-    has_given_up: bool,
+    pub has_given_up: bool,
     ///The current board data
     data: Data,
     ///The RNG used for random number generation
@@ -87,10 +87,6 @@ impl Board {
         self.data.flagged.intersection(&self.data.mines).count()
     }
 
-    pub fn give_up(&mut self) {
-        self.has_given_up = true;
-    }
-
     pub const fn get_data(&self) -> &Data {
         &self.data
     }
@@ -112,6 +108,17 @@ impl Board {
         }
 
         self.data.click(pos, &mut self.rng)
+    }
+
+    pub fn undo_mistake (&mut self) {
+        if self.game_has_been_won() || !self.game_is_over() {
+            return;
+        }
+
+        let intersection: Vec<_> = self.data.clicked.intersection(&self.data.mines).copied().collect();
+        for mistake in intersection {
+            self.data.clicked.remove(&mistake);
+        }
     }
 
     pub fn render(&self) -> Vec<RenderedGridElement> {

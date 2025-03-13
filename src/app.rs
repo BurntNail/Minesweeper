@@ -2,7 +2,7 @@ use crate::board::{Board, SpriteAtlas, TextureCache};
 use crate::ser::{InvalidDataError, deserialise_extra_time, serialise_extra_time};
 use crate::time_sampler::TimeSampler;
 use eframe::{App, CreationContext, Frame, Storage};
-use egui::{Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, TextureHandle, Widget, pos2, Button};
+use egui::{Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, TextureHandle, Widget, pos2};
 use std::time::{Duration, Instant};
 
 ///Struct to keep a hold of all things related to the minesweeper UI/app
@@ -31,6 +31,7 @@ pub struct MinesweeperApp {
     frametime_counter: TimeSampler<50>,
     sprite_atlas: SpriteAtlas,
     texture_cache: TextureCache,
+    cheats_enabled: bool,
 }
 
 impl MinesweeperApp {
@@ -46,6 +47,7 @@ impl MinesweeperApp {
         let mut extra_time = Duration::new(0, 0);
         let mut game_started = None;
         let mut texture_cache = TextureCache::default();
+        let mut cheats_enabled = false;
 
         let image_handle = {
             cc.egui_ctx.input_mut(|input_state| {
@@ -84,6 +86,10 @@ impl MinesweeperApp {
                     Err(e) => eprintln!("Error deser-ing extra time: {e:?}"),
                 }
             }
+
+            if storage.get_string("cheater").is_some() {
+                cheats_enabled = true;
+            }
         }
 
         //then we use that to either create a board with the previous data, or we just use the defaults
@@ -112,6 +118,7 @@ impl MinesweeperApp {
             sprite_atlas,
             frametime_counter: TimeSampler::new(),
             texture_cache,
+            cheats_enabled,
         })
     }
 }
@@ -159,11 +166,16 @@ impl App for MinesweeperApp {
                         #[allow(clippy::useless_let_if_seq)]
                         let mut reset_vars = false;
 
-                        if ui.add_enabled(!self.board.game_is_over(), Button::new("Give Up?")).clicked() {
-                            self.board.give_up();
-                            reset_vars = true;
-
+                        if self.board.game_is_over() && !self.board.has_given_up {
+                            if ui.button("Undo Mistake?").clicked() {
+                                self.board.undo_mistake();
+                                self.cheats_enabled = true;
+                                self.game_stopped = None;
+                            }
+                        } else if ui.button("Give Up?").clicked() {
+                            self.board.has_given_up = true;
                         }
+
                         if ui.button("Reset Game?").clicked() {
                             self.board.reset(Some((
                                 self.next_width,
@@ -179,6 +191,8 @@ impl App for MinesweeperApp {
                             self.game_stopped = None;
                             self.extra_time = Duration::new(0, 0);
                             self.cached_counts.clear();
+                            self.cheats_enabled = false;
+                            self.board.has_given_up = false;
                         }
                     }
                     ui.end_row();
@@ -218,6 +232,10 @@ impl App for MinesweeperApp {
                 });
 
                 ui.vertical(|ui| {
+                    if self.cheats_enabled {
+                        ui.label("NB: Mistakes have been undone");
+                    }
+
                     let fps = {
                         let secs = self.frametime_counter.get_average().as_secs_f64();
                         1.0 / secs
@@ -387,5 +405,9 @@ impl App for MinesweeperApp {
         });
 
         storage.set_string("extratime", extra_time);
+
+        if self.cheats_enabled {
+            storage.set_string("cheater", "yep, we've got a real bad boy here".to_string());
+        }
     }
 }
