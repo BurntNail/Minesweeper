@@ -115,9 +115,8 @@ impl Board {
             return;
         }
 
-        let intersection: Vec<_> = self.data.clicked.intersection(&self.data.mines).copied().collect();
-        for mistake in intersection {
-            self.data.clicked.remove(&mistake);
+        for mine in &self.data.mines {
+            self.data.clicked.remove(mine);
         }
     }
 

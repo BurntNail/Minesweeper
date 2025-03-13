@@ -1,29 +1,40 @@
+use std::ops::Add;
+use std::ops::Div;
 use std::time::{Duration, Instant};
 
-pub struct TimeSampler<const N: usize> {
-    samples: [Duration; N],
-    next_index: usize,
-    are_all_valid: bool,
-    last_start: Option<Instant>,
+pub trait Sampler: Default {
+    type Output;
+    fn start(&mut self);
+    fn stop(&mut self) -> Option<Self::Output>;
 }
 
-impl<const N: usize> TimeSampler<N> {
-    pub const fn new() -> Self {
+pub struct SampleHolder<const N: usize, S: Sampler> {
+    sampler: S,
+    samples: [S::Output; N],
+    next_index: usize,
+    are_all_valid: bool,
+}
+
+impl<const N: usize, S: Sampler> SampleHolder<N, S>
+where S::Output: Default + Copy
+{
+    //TODO: make a version that doesn't require copy?
+    pub fn new() -> Self {
         Self {
-            samples: [Duration::new(0, 0); N],
+            sampler: S::default(),
+            samples: [S::Output::default(); N],
             next_index: 0,
             are_all_valid: false,
-            last_start: None,
         }
     }
 
-    pub fn start_timer(&mut self) {
-        self.last_start = Some(Instant::now());
+    pub fn start(&mut self) {
+        self.sampler.start();
     }
 
-    pub fn stop_timer(&mut self) {
-        if let Some(start) = self.last_start.take() {
-            self.samples[self.next_index] = start.elapsed();
+    pub fn stop(&mut self) {
+        if let Some(sample) = self.sampler.stop() {
+            self.samples[self.next_index] = sample;
 
             if self.next_index == N - 1 {
                 self.are_all_valid = true;
@@ -33,15 +44,17 @@ impl<const N: usize> TimeSampler<N> {
             }
         }
     }
+}
 
+impl<const N: usize, S: Sampler> SampleHolder<N, S>
+where S::Output: Add<Output = S::Output> + Div<u32, Output = S::Output> + Default + Copy {
     #[allow(dead_code)]
-    pub fn get_average(&self) -> Duration {
+    pub fn get_average(&self) -> Option<S::Output> {
         if self.next_index == 0 && !self.are_all_valid {
-            return Duration::new(0, 0);
+            return None;
         }
 
-        let mut sum_seconds = 0;
-        let mut sum_nanos = 0;
+        let mut sum = S::Output::default();
 
         let end = if self.are_all_valid {
             N - 1
@@ -49,16 +62,33 @@ impl<const N: usize> TimeSampler<N> {
             self.next_index
         };
 
-        for dur in &self.samples[0..end] {
-            sum_seconds += dur.as_secs();
-            sum_nanos += dur.subsec_nanos();
+        for sample in &self.samples[0..end] {
+            sum = sum + *sample;
         }
 
-        Duration::new(sum_seconds / (end as u64), sum_nanos / (end as u32))
+        Some(sum / (end as u32))
+    }
+}
+
+impl<const N: usize, S: Sampler> SampleHolder<N, S>
+where S::Output: Ord {
+    #[allow(dead_code)]
+    pub fn get_max (&self) -> Option<&S::Output> {
+        self.samples.iter().max()
+    }
+}
+
+#[derive(Default)]
+pub struct InstantSampler(Option<Instant>);
+
+impl Sampler for InstantSampler {
+    type Output = Duration;
+
+    fn start(&mut self) {
+        self.0 = Some(Instant::now());
     }
 
-    #[allow(dead_code)]
-    pub fn get_max(&self) -> Duration {
-        self.samples.iter().max().copied().unwrap_or_default()
+    fn stop(&mut self) -> Option<Self::Output> {
+        self.0.take().map(|i| i.elapsed())
     }
 }

@@ -1,6 +1,6 @@
 use crate::board::{Board, SpriteAtlas, TextureCache};
 use crate::ser::{InvalidDataError, deserialise_extra_time, serialise_extra_time};
-use crate::time_sampler::TimeSampler;
+use crate::time_sampler::{InstantSampler, SampleHolder};
 use eframe::{App, CreationContext, Frame, Storage};
 use egui::{Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, TextureHandle, Widget, pos2};
 use std::time::{Duration, Instant};
@@ -28,7 +28,7 @@ pub struct MinesweeperApp {
     ///A handle to the sprite atlas
     image_handle: TextureHandle,
     ///A sampler for frametimes
-    frametime_counter: TimeSampler<50>,
+    frametime_counter: SampleHolder<50, InstantSampler>,
     sprite_atlas: SpriteAtlas,
     texture_cache: TextureCache,
     cheats_enabled: bool,
@@ -116,7 +116,7 @@ impl MinesweeperApp {
             image_handle,
             extra_time,
             sprite_atlas,
-            frametime_counter: TimeSampler::new(),
+            frametime_counter: SampleHolder::new(),
             texture_cache,
             cheats_enabled,
         })
@@ -126,7 +126,7 @@ impl MinesweeperApp {
 impl App for MinesweeperApp {
     #[allow(clippy::too_many_lines)]
     fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
-        self.frametime_counter.start_timer();
+        self.frametime_counter.start();
         egui::TopBottomPanel::top("top panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 //start a grid
@@ -236,10 +236,7 @@ impl App for MinesweeperApp {
                         ui.label("NB: Mistakes have been undone");
                     }
 
-                    let fps = {
-                        let secs = self.frametime_counter.get_average().as_secs_f64();
-                        1.0 / secs
-                    };
+                    let fps = self.frametime_counter.get_average().map(|dur| 1.0 / dur.as_secs_f64()).unwrap_or(0.0);
 
                     ui.label(format!(
                         "Current FPS: {fps:?}",
@@ -390,7 +387,7 @@ impl App for MinesweeperApp {
             }
         });
 
-        self.frametime_counter.stop_timer();
+        self.frametime_counter.stop();
     }
 
     fn save(&mut self, storage: &mut dyn Storage) {
