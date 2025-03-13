@@ -270,6 +270,7 @@ impl App for MinesweeperApp {
                     rect.max.x = rect.min.x + rect.width() / sf_x;
                     rect.max.y = rect.min.y + rect.height() / sf_y;
 
+
                     //padding around the edges - 5% on each side
                     let width_to_be_used = rect.width() * 0.9;
                     let height_to_be_used = rect.height() * 0.9;
@@ -278,6 +279,18 @@ impl App for MinesweeperApp {
 
                     let start_x = rect.left() + (rect.width() - width_to_be_used) / 2.0;
                     let mut start_y = rect.top() + (rect.height() - height_to_be_used) / 2.0;
+
+                    if let Some(bg_colour) = self.sprite_atlas.background_colour() {
+                        ui.painter()
+                            .rect_filled(
+                                Rect {
+                                    min: pos2(start_x, start_y),
+                                    max: pos2(start_x + width_to_be_used, start_y + height_to_be_used),
+                                },
+                                0.0,
+                                bg_colour
+                            );
+                    }
 
                     //get the hints
                     let counts = {

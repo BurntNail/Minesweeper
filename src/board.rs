@@ -1,7 +1,7 @@
 use crate::data::Data;
 use crate::ser::InvalidDataError;
 use egui::ahash::HashMap;
-use egui::{ColorImage, Context, Rect, TextureHandle, TextureOptions, pos2};
+use egui::{ColorImage, Context, Rect, TextureHandle, TextureOptions, pos2, Color32};
 use fastrand::Rng;
 use image::{ImageFormat, ImageReader};
 use std::collections::hash_map::Entry;
@@ -164,29 +164,33 @@ impl Board {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
 pub enum SpriteAtlas {
     //https://github.com/Minesweeper-World/MS-Texture/blob/main/png/cells/WinmineXP.png
+    #[default]
     WinMine,
     //https://www.spriters-resource.com/fullview/180218/
     RTXOn,
+    //https://kia.itch.io/16x16-tileset-for-minesweeper
+    DarkMode,
 }
 
 impl SpriteAtlas {
     //currently controlled by the RTXOn variant
     pub const MAX_TEXTURE_SIDE: usize = 3072;
-    pub const ALL_VARIANTS: [Self; 2] = [Self::RTXOn, Self::WinMine];
+    pub const ALL_VARIANTS: [Self; 3] = [Self::WinMine, Self::RTXOn, Self::DarkMode];
 
     pub const fn get_png_bytes(self) -> &'static [u8] {
         match self {
             Self::WinMine => include_bytes!("../WinmineXP.png"),
             Self::RTXOn => include_bytes!("../RTXOn.png"),
+            Self::DarkMode => include_bytes!("../NightMode.png")
         }
     }
 
     pub const fn get_texture_options(self) -> TextureOptions {
         match self {
-            Self::WinMine => TextureOptions::NEAREST,
+            Self::WinMine | Self::DarkMode => TextureOptions::NEAREST,
             Self::RTXOn => TextureOptions::LINEAR,
         }
     }
@@ -195,6 +199,14 @@ impl SpriteAtlas {
         match self {
             Self::WinMine => "WinMine XP",
             Self::RTXOn => "RTX On",
+            Self::DarkMode => "Dark Mode",
+        }
+    }
+
+    pub const fn background_colour (self) -> Option<Color32> {
+        match self {
+            Self::DarkMode => Some(Color32::from_rgb(0x2d, 0x17, 0x10)),
+            _ => None
         }
     }
 }
@@ -243,15 +255,22 @@ enum GridElementType {
 
 impl RenderedGridElement {
     pub fn to_uv(self, count: u8, game_is_over: bool, sprite_atlas: SpriteAtlas) -> Rect {
+        let rect_function_creator = |x_width: f32, y_width: f32, extra_y_sf: Option<f32>| {
+            let x_divisor = 1.0 / x_width;
+            let y_divisor = 1.0 / y_width * extra_y_sf.unwrap_or(1.0);
+
+            move |x, y| {
+                let (x, y) = (x as f32, y as f32);
+                Rect {
+                    min: pos2(x_divisor * x, y_divisor * y),
+                    max: pos2(x_divisor * (x + 1.0), y_divisor * (y + 1.0)),
+                }
+            }
+        };
+
         match sprite_atlas {
             SpriteAtlas::WinMine => {
-                let rect = |x, y| {
-                    let (x, y) = (x as f32, y as f32);
-                    Rect {
-                        min: pos2(0.25 * x, 0.25 * y),
-                        max: pos2(0.25 * (x + 1.0), 0.25 * (y + 1.0)),
-                    }
-                };
+                let rect = rect_function_creator(4.0, 4.0, None);
 
                 if self.flagged {
                     return if game_is_over && self.ty != GridElementType::Mine {
@@ -287,14 +306,7 @@ impl RenderedGridElement {
                 }
             }
             SpriteAtlas::RTXOn => {
-                let rect = |x, y| {
-                    let (x, y) = (x as f32, y as f32);
-                    let y_scale_factor = (512.0 * 5.0) / 3072.0;
-                    Rect {
-                        min: pos2(0.25 * x, 0.2 * y * y_scale_factor),
-                        max: pos2(0.25 * (x + 1.0), 0.2 * (y + 1.0) * y_scale_factor),
-                    }
-                };
+                let rect = rect_function_creator(4.0, 5.0, Some((512.0 * 5.0) / 3072.0));
 
                 if self.flagged {
                     return if game_is_over && self.ty != GridElementType::Mine {
@@ -329,6 +341,43 @@ impl RenderedGridElement {
                     GridElementType::Mine => rect(0, 2),
                 }
             }
+            SpriteAtlas::DarkMode => {
+                let rect = rect_function_creator(4.0, 4.0, None);
+
+                if self.flagged {
+                    return if game_is_over && self.ty != GridElementType::Mine {
+                        rect(3, 3)
+                    } else {
+                        rect(2, 0)
+                    };
+                }
+
+                match self.ty {
+                    GridElementType::Exploded => rect(3, 0),
+                    GridElementType::Undiscovered => rect(2, 3),
+                    GridElementType::Discovered {
+                        should_display_count,
+                    } => {
+                        if should_display_count {
+                            match count {
+                                1 => rect(0, 1),
+                                2 => rect(1, 1),
+                                3 => rect(2, 1),
+                                4 => rect(3, 1),
+                                5 => rect(0, 2),
+                                6 => rect(1, 2),
+                                7 => rect(2, 2),
+                                8 => rect(3, 2),
+                                _ => rect(0, 3),
+                            }
+                        } else {
+                            rect(0, 3)
+                        }
+                    }
+                    GridElementType::Mine => rect(0, 0),
+                }
+            }
+
         }
     }
 }
