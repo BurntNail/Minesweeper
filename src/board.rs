@@ -162,13 +162,20 @@ impl Board {
 
 #[derive(Copy, Clone, Debug)]
 pub enum SpriteAtlas {
-    WinMine
+    //https://github.com/Minesweeper-World/MS-Texture/blob/main/png/cells/WinmineXP.png
+    WinMine,
+    //https://www.spriters-resource.com/fullview/180218/
+    RTXOn,
 }
 
 impl SpriteAtlas {
+    //currently controlled by the RTXOn variant
+    pub const MAX_TEXTURE_SIDE: usize = 3072;
+
     pub fn get_png_bytes (self) -> &'static [u8] {
         match self {
-            SpriteAtlas::WinMine => include_bytes!("../WinmineXP.png")
+            SpriteAtlas::WinMine => include_bytes!("../WinmineXP.png"),
+            SpriteAtlas::RTXOn => include_bytes!("../RTXOn.png")
         }
     }
 }
@@ -190,16 +197,16 @@ enum GridElementType {
 
 impl RenderedGridElement {
     pub fn to_uv(self, count: u8, game_is_over: bool, sprite_atlas: SpriteAtlas) -> Rect {
-        let rect = |x, y| {
-            let (x, y) = (x as f32, y as f32);
-            Rect {
-                min: pos2(0.25 * x, 0.25 * y),
-                max: pos2(0.25 * (x + 1.0), 0.25 * (y + 1.0)),
-            }
-        };
-
         match sprite_atlas {
             SpriteAtlas::WinMine => {
+                let rect = |x, y| {
+                    let (x, y) = (x as f32, y as f32);
+                    Rect {
+                        min: pos2(0.25 * x, 0.25 * y),
+                        max: pos2(0.25 * (x + 1.0), 0.25 * (y + 1.0)),
+                    }
+                };
+
                 if self.flagged {
                     return if game_is_over && self.ty != GridElementType::Mine {
                         rect(3, 2)
@@ -231,6 +238,49 @@ impl RenderedGridElement {
                         }
                     }
                     GridElementType::Mine => rect(2, 3),
+                }
+            },
+            SpriteAtlas::RTXOn => {
+                let rect = |x, y| {
+                    let (x, y) = (x as f32, y as f32);
+                    let y_scale_factor = (512.0 * 5.0) / 3072.0;
+                    Rect {
+                        min: pos2(0.25 * x, 0.2 * y * y_scale_factor),
+                        max: pos2(0.25 * (x + 1.0), 0.2 * (y + 1.0) * y_scale_factor),
+                    }
+                };
+
+                if self.flagged {
+                    return if game_is_over && self.ty != GridElementType::Mine {
+                        rect(1, 2)
+                    } else {
+                        rect(0, 1)
+                    };
+                }
+
+                match self.ty {
+                    GridElementType::Exploded => rect(2, 2),
+                    GridElementType::Undiscovered => rect(0, 0),
+                    GridElementType::Discovered {
+                        should_display_count,
+                    } => {
+                        if should_display_count {
+                            match count {
+                                1 => rect(0, 3),
+                                2 => rect(1, 3),
+                                3 => rect(2, 3),
+                                4 => rect(3, 3),
+                                5 => rect(0, 4),
+                                6 => rect(1, 4),
+                                7 => rect(2, 4),
+                                8 => rect(3, 4),
+                                _ => rect(3, 0),
+                            }
+                        } else {
+                            rect(3, 0)
+                        }
+                    }
+                    GridElementType::Mine => rect(0, 2),
                 }
             }
         }

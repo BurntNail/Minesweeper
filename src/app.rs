@@ -52,6 +52,10 @@ impl MinesweeperApp {
         let mut game_started = None;
 
         let image_handle = {
+            cc.egui_ctx.input_mut(|input_state| {
+                input_state.max_texture_side = SpriteAtlas::MAX_TEXTURE_SIDE;
+            });
+
             //create a cursor so that we fufill the io::Seek req
             //have to use `with_format` as no file name to hint the type - magic bytes don't seem to work?
             let image = ImageReader::with_format(Cursor::new(sprite_atlas.get_png_bytes()), ImageFormat::Png)

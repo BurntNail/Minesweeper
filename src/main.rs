@@ -24,7 +24,7 @@ fn main() {
     let options = NativeOptions::default();
 
     //use the WinMine sprite atlas by default
-    let sprite_atlas = SpriteAtlas::WinMine;
+    let sprite_atlas = SpriteAtlas::RTXOn;
 
     eframe::run_native(
         "Minesweeper",
