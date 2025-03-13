@@ -1,7 +1,7 @@
 use crate::data::Data;
 use crate::ser::InvalidDataError;
 use egui::{Rect, pos2};
-use rand::rngs::ThreadRng;
+use fastrand::Rng;
 use std::default::Default;
 
 pub struct Board {
@@ -10,7 +10,7 @@ pub struct Board {
     ///The current board data
     data: Data,
     ///The RNG used for random number generation
-    rng: ThreadRng,
+    rng: Rng,
 }
 
 impl TryFrom<Data> for Board {
@@ -31,7 +31,7 @@ impl TryFrom<Data> for Board {
         Ok(Self {
             has_given_up: false,
             data,
-            rng: ThreadRng::default(),
+            rng: Rng::default(),
         })
     }
 }
