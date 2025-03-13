@@ -1,4 +1,4 @@
-use crate::board::Board;
+use crate::board::{Board, SpriteAtlas};
 use crate::ser::{InvalidDataError, deserialise_extra_time, serialise_extra_time};
 use crate::time_sampler::TimeSampler;
 use eframe::epaint::ColorImage;
@@ -35,6 +35,7 @@ pub struct MinesweeperApp {
     image_handle: TextureHandle,
     ///A sampler for frametimes
     frametime_counter: TimeSampler<10>,
+    sprite_atlas: SpriteAtlas,
 }
 
 impl MinesweeperApp {
@@ -42,6 +43,7 @@ impl MinesweeperApp {
         width: usize,
         height: usize,
         number_of_mines: usize,
+        sprite_atlas: SpriteAtlas,
         cc: &CreationContext,
     ) -> Result<Self, InvalidDataError> {
         //assume we can't get any previous data
@@ -50,12 +52,9 @@ impl MinesweeperApp {
         let mut game_started = None;
 
         let image_handle = {
-            //store the bytes inside the binary
-            static BYTES: &[u8] = include_bytes!("../WinmineXP.png");
-
             //create a cursor so that we fufill the io::Seek req
             //have to use `with_format` as no file name to hint the type - magic bytes don't seem to work?
-            let image = ImageReader::with_format(Cursor::new(BYTES), ImageFormat::Png)
+            let image = ImageReader::with_format(Cursor::new(sprite_atlas.get_png_bytes()), ImageFormat::Png)
                 .decode()
                 .expect("unable to decode image") //panic because fatal error in init
                 .to_rgba8(); //convert to rgba8 so when we get the flat samples it's easy to give it to the egui image
@@ -65,7 +64,7 @@ impl MinesweeperApp {
                 ColorImage::from_rgba_unmultiplied([w as usize, h as usize], pixels.as_slice());
 
             cc.egui_ctx
-                .load_texture("winminexptex", img, TextureOptions::NEAREST)
+                .load_texture("spriteatlas", img, TextureOptions::NEAREST)
         };
 
         //if we have storage
@@ -122,6 +121,7 @@ impl MinesweeperApp {
             board,
             image_handle,
             extra_time,
+            sprite_atlas,
             frametime_counter: TimeSampler::new(),
         })
     }
@@ -298,7 +298,7 @@ impl App for MinesweeperApp {
                         };
                         //get the UV coordinates on the sprite atlas
                         let uv_rect = cell
-                            .to_uv(counts.get(index).copied().unwrap_or_default(), game_is_over);
+                            .to_uv(counts.get(index).copied().unwrap_or_default(), game_is_over, self.sprite_atlas);
 
                         ui.painter().image(
                             self.image_handle.id(),

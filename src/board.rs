@@ -160,6 +160,19 @@ impl Board {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum SpriteAtlas {
+    WinMine
+}
+
+impl SpriteAtlas {
+    pub fn get_png_bytes (self) -> &'static [u8] {
+        match self {
+            SpriteAtlas::WinMine => include_bytes!("../WinmineXP.png")
+        }
+    }
+}
+
 ///A grid element that has been rendered - to display, use the [`RenderedGridElement::to_uv`] method
 #[derive(Copy, Clone, Debug)]
 pub struct RenderedGridElement {
@@ -176,7 +189,7 @@ enum GridElementType {
 }
 
 impl RenderedGridElement {
-    pub fn to_uv(self, count: u8, game_is_over: bool) -> Rect {
+    pub fn to_uv(self, count: u8, game_is_over: bool, sprite_atlas: SpriteAtlas) -> Rect {
         let rect = |x, y| {
             let (x, y) = (x as f32, y as f32);
             Rect {
@@ -185,37 +198,41 @@ impl RenderedGridElement {
             }
         };
 
-        if self.flagged {
-            return if game_is_over && self.ty != GridElementType::Mine {
-                rect(3, 2)
-            } else {
-                rect(2, 2)
-            };
-        }
+        match sprite_atlas {
+            SpriteAtlas::WinMine => {
+                if self.flagged {
+                    return if game_is_over && self.ty != GridElementType::Mine {
+                        rect(3, 2)
+                    } else {
+                        rect(2, 2)
+                    };
+                }
 
-        match self.ty {
-            GridElementType::Exploded => rect(3, 3),
-            GridElementType::Undiscovered => rect(1, 2),
-            GridElementType::Discovered {
-                should_display_count,
-            } => {
-                if should_display_count {
-                    match count {
-                        1 => rect(0, 0),
-                        2 => rect(1, 0),
-                        3 => rect(2, 0),
-                        4 => rect(3, 0),
-                        5 => rect(0, 1),
-                        6 => rect(1, 1),
-                        7 => rect(2, 1),
-                        8 => rect(3, 1),
-                        _ => rect(0, 2),
+                match self.ty {
+                    GridElementType::Exploded => rect(3, 3),
+                    GridElementType::Undiscovered => rect(1, 2),
+                    GridElementType::Discovered {
+                        should_display_count,
+                    } => {
+                        if should_display_count {
+                            match count {
+                                1 => rect(0, 0),
+                                2 => rect(1, 0),
+                                3 => rect(2, 0),
+                                4 => rect(3, 0),
+                                5 => rect(0, 1),
+                                6 => rect(1, 1),
+                                7 => rect(2, 1),
+                                8 => rect(3, 1),
+                                _ => rect(0, 2),
+                            }
+                        } else {
+                            rect(0, 2)
+                        }
                     }
-                } else {
-                    rect(0, 2)
+                    GridElementType::Mine => rect(2, 3),
                 }
             }
-            GridElementType::Mine => rect(2, 3),
         }
     }
 }

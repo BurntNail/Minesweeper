@@ -7,6 +7,7 @@
 
 use crate::app::MinesweeperApp;
 use eframe::NativeOptions;
+use crate::board::SpriteAtlas;
 
 mod app;
 mod board;
@@ -22,12 +23,15 @@ fn main() {
     //don't need to change any of the native options
     let options = NativeOptions::default();
 
+    //use the WinMine sprite atlas by default
+    let sprite_atlas = SpriteAtlas::WinMine;
+
     eframe::run_native(
         "Minesweeper",
         options,
         Box::new(|cc| {
             Ok(Box::new(
-                MinesweeperApp::new(size, size, number_of_mines, cc)
+                MinesweeperApp::new(size, size, number_of_mines, sprite_atlas, cc)
                     .expect("unable to create board"),
             ))
         }),
