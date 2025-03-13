@@ -8,7 +8,7 @@ pub struct TimeSampler<const N: usize> {
 }
 
 impl<const N: usize> TimeSampler<N> {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             samples: [Duration::new(0, 0); N],
             next_index: 0,

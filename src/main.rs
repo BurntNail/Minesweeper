@@ -6,8 +6,8 @@
 )]
 
 use crate::app::MinesweeperApp;
-use eframe::NativeOptions;
 use crate::board::SpriteAtlas;
+use eframe::NativeOptions;
 
 mod app;
 mod board;
@@ -24,7 +24,7 @@ fn main() {
     let options = NativeOptions::default();
 
     //use the WinMine sprite atlas by default
-    let sprite_atlas = SpriteAtlas::RTXOn;
+    let sprite_atlas = SpriteAtlas::WinMine;
 
     eframe::run_native(
         "Minesweeper",

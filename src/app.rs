@@ -3,8 +3,7 @@ use crate::ser::{InvalidDataError, deserialise_extra_time, serialise_extra_time}
 use crate::time_sampler::TimeSampler;
 use eframe::{App, CreationContext, Frame, Storage};
 use egui::{
-    Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, TextureHandle,
-    Widget, pos2,
+    Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, TextureHandle, Widget, pos2,
 };
 use std::time::{Duration, Instant};
 
@@ -31,7 +30,7 @@ pub struct MinesweeperApp {
     ///A handle to the sprite atlas
     image_handle: TextureHandle,
     ///A sampler for frametimes
-    frametime_counter: TimeSampler<10>,
+    frametime_counter: TimeSampler<50>,
     sprite_atlas: SpriteAtlas,
     texture_cache: TextureCache,
 }
@@ -114,7 +113,7 @@ impl MinesweeperApp {
             extra_time,
             sprite_atlas,
             frametime_counter: TimeSampler::new(),
-            texture_cache
+            texture_cache,
         })
     }
 }
@@ -219,14 +218,21 @@ impl App for MinesweeperApp {
                 });
 
                 ui.vertical(|ui| {
+                    let fps = {
+                        let secs = self.frametime_counter.get_average().as_secs_f64();
+                        1.0 / secs
+                    };
+
                     ui.label(format!(
-                        "Current Max Frametime: {:?}",
-                        self.frametime_counter.get_max()
+                        "Current FPS: {fps:?}",
                     ));
 
                     let old_sprite_atlas = self.sprite_atlas;
 
-                    for (atlas, name) in SpriteAtlas::ALL_VARIANTS.into_iter().map(|x| (x, x.as_static_str())) {
+                    for (atlas, name) in SpriteAtlas::ALL_VARIANTS
+                        .into_iter()
+                        .map(|x| (x, x.as_static_str()))
+                    {
                         ui.radio_value(&mut self.sprite_atlas, atlas, name);
                     }
 
@@ -240,7 +246,7 @@ impl App for MinesweeperApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             //get the response (for double-click checking), also wrapping the reset rect
             let rsp = Scene::new()
-                .zoom_range(0.05..=5.0)
+                .zoom_range(0.05..=10.0)
                 .show(ui, &mut self.board_rect, |ui| {
                     //work out the display aspect ratio
                     let mut rect = ui.available_rect_before_wrap();
@@ -302,8 +308,11 @@ impl App for MinesweeperApp {
                             ),
                         };
                         //get the UV coordinates on the sprite atlas
-                        let uv_rect = cell
-                            .to_uv(counts.get(index).copied().unwrap_or_default(), game_is_over, self.sprite_atlas);
+                        let uv_rect = cell.to_uv(
+                            counts.get(index).copied().unwrap_or_default(),
+                            game_is_over,
+                            self.sprite_atlas,
+                        );
 
                         ui.painter().image(
                             self.image_handle.id(),
