@@ -240,7 +240,9 @@ mod data {
                 mines,
             };
 
-            println!("desered shitty hash: {}", res.shitty_hash());
+            if cfg!(debug_assertions) {
+                println!("desered shitty hash: {}", res.shitty_hash());
+            }
 
             Ok(res)
         }
@@ -248,7 +250,9 @@ mod data {
 
     impl From<Data> for String {
         fn from(data: Data) -> Self {
-            println!("serialising shitty hash: {}", data.shitty_hash());
+            if cfg!(debug_assertions) {
+                println!("serialising shitty hash: {}", data.shitty_hash());
+            }
 
             let Data {
                 width,

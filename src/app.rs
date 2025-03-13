@@ -2,9 +2,7 @@ use crate::board::{Board, SpriteAtlas, TextureCache};
 use crate::ser::{InvalidDataError, deserialise_extra_time, serialise_extra_time};
 use crate::time_sampler::TimeSampler;
 use eframe::{App, CreationContext, Frame, Storage};
-use egui::{
-    Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, TextureHandle, Widget, pos2,
-};
+use egui::{Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, TextureHandle, Widget, pos2, Button};
 use std::time::{Duration, Instant};
 
 ///Struct to keep a hold of all things related to the minesweeper UI/app
@@ -160,9 +158,11 @@ impl App for MinesweeperApp {
                         //allow either giving up or resetting
                         #[allow(clippy::useless_let_if_seq)]
                         let mut reset_vars = false;
-                        if ui.button("Give Up?").clicked() {
+
+                        if ui.add_enabled(!self.board.game_is_over(), Button::new("Give Up?")).clicked() {
                             self.board.give_up();
                             reset_vars = true;
+
                         }
                         if ui.button("Reset Game?").clicked() {
                             self.board.reset(Some((

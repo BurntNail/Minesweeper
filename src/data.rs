@@ -47,6 +47,7 @@ impl Data {
             .count()
     }
 
+    #[allow(dead_code)]
     pub fn shitty_hash(&self) -> usize {
         let sum = |iter: &HashSet<_>, multiplier| {
             iter.iter()
