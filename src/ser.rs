@@ -81,6 +81,7 @@ mod data {
     use std::fmt::{Display, Formatter};
     use std::num::ParseIntError;
     use std::str::FromStr;
+    use itertools::Itertools;
 
     #[derive(Debug)]
     pub enum DataReadError {
@@ -94,6 +95,11 @@ mod data {
     impl From<ParseIntError> for DataReadError {
         fn from(value: ParseIntError) -> Self {
             Self::UnableToParseInteger(value)
+        }
+    }
+    impl From<InvalidDataError> for DataReadError {
+        fn from(value: InvalidDataError) -> Self {
+            Self::InvalidDataFound(value)
         }
     }
 
@@ -152,6 +158,38 @@ mod data {
 
     impl std::error::Error for InvalidDataError {}
 
+    #[derive(Copy, Clone, Eq, PartialEq)]
+    enum DataContainmentMethod {
+        NoData,
+        Indices,
+        DiscoveredBitflagsElseIndices
+    }
+
+    const USIZE_BITS: usize = usize::BITS as usize;
+
+    impl From<DataContainmentMethod> for char {
+        fn from(value: DataContainmentMethod) -> Self {
+            match value {
+                DataContainmentMethod::NoData => 'n',
+                DataContainmentMethod::Indices => 'y',
+                DataContainmentMethod::DiscoveredBitflagsElseIndices => 'b',
+            }
+        }
+    }
+
+    impl TryFrom<char> for DataContainmentMethod {
+        type Error = InvalidDataError;
+
+        fn try_from(value: char) -> Result<Self, Self::Error> {
+            Ok(match value {
+                'n' => Self::NoData,
+                'y' => Self::Indices,
+                'b' => Self::DiscoveredBitflagsElseIndices,
+                 _ => return Err(InvalidDataError::BadCharacter),
+            })
+        }
+    }
+
     impl FromStr for Data {
         type Err = DataReadError;
 
@@ -160,15 +198,9 @@ mod data {
             let mut accum = String::new();
             let mut chars = value.chars();
 
-            let should_contain_data = match chars.next() {
-                Some('y') => true,
-                Some('n') => false,
+            let data_container = match chars.next() {
+                Some(x) => DataContainmentMethod::try_from(x)?,
                 None => return Err(DataReadError::NotEnoughData),
-                _ => {
-                    return Err(DataReadError::InvalidDataFound(
-                        InvalidDataError::TooSmallHeight,
-                    ));
-                }
             };
 
             let mut get_numbers = |n| {
@@ -204,31 +236,51 @@ mod data {
                 ));
             }
 
-            let (flagged, clicked, mines) = if should_contain_data {
-                //according to the docs, this conversion is guaranteed not to re-allocate and will take O(1)
-                let mut numbers: VecDeque<_> = get_numbers(n_flagged + n_clicked + n_mines)?.into();
-                debug_assert_eq!(numbers.len(), n_flagged + n_clicked + n_mines);
+            let (flagged, clicked, mines) = match data_container {
+                DataContainmentMethod::NoData => (HashSet::new(), HashSet::new(), HashSet::new()),
+                DataContainmentMethod::Indices | DataContainmentMethod::DiscoveredBitflagsElseIndices => {
+                    //according to the docs, this conversion is guaranteed not to re-allocate and will take O(1)
+                    let mut numbers: VecDeque<_> = get_numbers(n_flagged + n_clicked + n_mines)?.into();
+                    debug_assert_eq!(numbers.len(), n_flagged + n_clicked + n_mines);
 
-                let mut get_hashset = |count| {
-                    (0..count)
-                        .map(|_i| {
-                            numbers
-                                .pop_front()
-                                .map(|index| Self::index_to_coords(index, width))
-                                .ok_or(DataReadError::NotEnoughData)
-                        })
-                        .collect::<Result<_, _>>()
-                };
+                    let get_hashset = |numbers: &mut VecDeque<_>, count| {
+                        (0..count)
+                            .map(|_i| {
+                                numbers
+                                    .pop_front()
+                                    .map(|index| Self::index_to_coords(index, width))
+                                    .ok_or(DataReadError::NotEnoughData)
+                            })
+                            .collect::<Result<_, DataReadError>>()
+                    };
 
-                let flagged = get_hashset(n_flagged)?;
-                let clicked = get_hashset(n_clicked)?;
-                let mines = get_hashset(n_mines)?;
+                    let flagged = get_hashset(&mut numbers, n_flagged)?;
+                    let clicked = if data_container == DataContainmentMethod::Indices {
+                        get_hashset(&mut numbers, n_clicked)?
+                    } else {
+                        let mut clicked = HashSet::new();
 
-                debug_assert!(numbers.is_empty());
+                        for y in 0..height {
+                            for x_chunk in &(0..width).chunks(USIZE_BITS) {
+                                let this_chunk = numbers.pop_front().ok_or(DataReadError::NotEnoughData)?;
 
-                (flagged, clicked, mines)
-            } else {
-                (HashSet::new(), HashSet::new(), HashSet::new())
+                                for (i, x) in x_chunk.into_iter().enumerate() {
+                                    if (this_chunk & (1 << i)) > 0 {
+                                        clicked.insert((x, y));
+                                    }
+                                }
+                            }
+                        }
+
+                        clicked
+                    };
+
+                    let mines = get_hashset(&mut numbers, n_mines)?;
+
+                    debug_assert!(numbers.is_empty());
+
+                    (flagged, clicked, mines)
+                }
             };
 
             let res = Self {
@@ -263,27 +315,50 @@ mod data {
                 mines,
             } = data;
 
-            let (mut output, n_mines) = if mines.is_empty() {
+            let hashset_to_indices = |hs: HashSet<_>| {
+                hs.into_iter().map(|pos| Data::coords_to_index(pos, width))
+            };
+
+            let (clicked, n_mines, data_containment_method) = if mines.is_empty() {
                 debug_assert!(mines.is_empty());
                 debug_assert!(flagged.is_empty());
                 debug_assert!(clicked.is_empty());
 
-                ('n'.to_string(), number_of_mines)
+                (vec![], number_of_mines, DataContainmentMethod::NoData)
+            }  else if clicked.len() < (width * height / USIZE_BITS) {
+                (hashset_to_indices(clicked).collect(), mines.len(), DataContainmentMethod::Indices)
             } else {
-                ('y'.to_string(), mines.len())
+                let mut output_clicked = Vec::with_capacity(width * height / USIZE_BITS);
+
+                for y in 0..height {
+                    for x_chunk in &(0..width).chunks(USIZE_BITS) {
+                        let mut n: usize = 0;
+
+                        for (i, x) in x_chunk.into_iter().enumerate() {
+                            if clicked.contains(&(x, y)) {
+                                n |= 1 << i;
+                            }
+                        }
+
+                        output_clicked.push(n);
+                    }
+                }
+
+                (output_clicked, mines.len(), DataContainmentMethod::DiscoveredBitflagsElseIndices)
             };
+
+            let mut output = char::from(data_containment_method).to_string();
 
             for n in [width, height, flagged.len(), clicked.len(), n_mines]
                 .into_iter()
                 .chain(
-                    flagged
-                        .into_iter()
+                    hashset_to_indices(flagged)
                         .chain(clicked)
-                        .chain(mines)
-                        .map(|pos| Data::coords_to_index(pos, width)),
+                        .chain(hashset_to_indices(mines))
                 )
             {
-                output.push_str(&format!("{n},")); //make sure to add a trailing comma so the last number gets parsed!
+                output.push_str(&format!("{n},"));
+                //make sure to add a trailing comma so the last number gets parsed!
                 //i originally didn't do this, but it made the deser way easier lol so why not
             }
 

@@ -11,3 +11,4 @@ eframe = { version = "0.31.0", features = ["persistence"] }
 egui = "0.31.0"
 fastrand = "2.3.0"
 image = "0.25.5"
+itertools = "0.14.0"

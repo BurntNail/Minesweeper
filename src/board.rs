@@ -260,6 +260,7 @@ enum GridElementType {
 }
 
 impl RenderedGridElement {
+    #[allow(clippy::too_many_lines)]
     pub fn to_uv(self, count: u8, game_is_over: bool, sprite_atlas: SpriteAtlas) -> Rect {
         let rect_function_creator = |x_width: f32, y_width: f32, extra_y_sf: Option<f32>| {
             let x_divisor = 1.0 / x_width;

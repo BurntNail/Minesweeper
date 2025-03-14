@@ -28,7 +28,7 @@ pub struct MinesweeperApp {
     ///A handle to the sprite atlas
     image_handle: TextureHandle,
     ///A sampler for frametimes
-    frametime_counter: SampleHolder<50, InstantSampler>,
+    frametime_counter: SampleHolder<100, InstantSampler>,
     sprite_atlas: SpriteAtlas,
     texture_cache: TextureCache,
     cheats_enabled: bool,
@@ -87,7 +87,7 @@ impl MinesweeperApp {
                 }
             }
 
-            if storage.get_string("cheater").is_some() {
+            if storage.get_string("cheater").map_or(false, |res| res == "y") {
                 cheats_enabled = true;
             }
         }
@@ -236,7 +236,7 @@ impl App for MinesweeperApp {
                         ui.label("NB: Mistakes have been undone");
                     }
 
-                    let fps = self.frametime_counter.get_average().map(|dur| 1.0 / dur.as_secs_f64()).unwrap_or(0.0);
+                    let fps = self.frametime_counter.get_average().map_or(0.0, |dur| 1.0 / dur.as_secs_f64());
 
                     ui.label(format!(
                         "Current FPS: {fps:?}",
@@ -403,8 +403,6 @@ impl App for MinesweeperApp {
 
         storage.set_string("extratime", extra_time);
 
-        if self.cheats_enabled {
-            storage.set_string("cheater", "yep, we've got a real bad boy here".to_string());
-        }
+        storage.set_string("cheater", if self.cheats_enabled {'y'} else {'n'}.to_string());
     }
 }
