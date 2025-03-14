@@ -2,7 +2,7 @@ use crate::board::{Board, SpriteAtlas, TextureCache};
 use crate::ser::{InvalidDataError, deserialise_extra_time, serialise_extra_time};
 use crate::time_sampler::{InstantSampler, SampleHolder};
 use eframe::{App, CreationContext, Frame, Storage};
-use egui::{Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, TextureHandle, Widget, pos2};
+use egui::{Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, TextureHandle, Widget, pos2, ProgressBar};
 use std::time::{Duration, Instant};
 
 ///Struct to keep a hold of all things related to the minesweeper UI/app
@@ -28,7 +28,7 @@ pub struct MinesweeperApp {
     ///A handle to the sprite atlas
     image_handle: TextureHandle,
     ///A sampler for frametimes
-    frametime_counter: SampleHolder<100, InstantSampler>,
+    frametime_counter: SampleHolder<250, InstantSampler>,
     sprite_atlas: SpriteAtlas,
     texture_cache: TextureCache,
     cheats_enabled: bool,
@@ -116,7 +116,7 @@ impl MinesweeperApp {
             image_handle,
             extra_time,
             sprite_atlas,
-            frametime_counter: SampleHolder::new(),
+            frametime_counter: SampleHolder::new_default_copy(),
             texture_cache,
             cheats_enabled,
         })
@@ -236,11 +236,13 @@ impl App for MinesweeperApp {
                         ui.label("NB: Mistakes have been undone");
                     }
 
-                    let fps = self.frametime_counter.get_average().map_or(0.0, |dur| 1.0 / dur.as_secs_f64());
+                    let inv_or_zero = |x: Option<Duration>| x.map_or(0.0, |dur| 1.0 / dur.as_secs_f64());
+                    let fps = inv_or_zero(self.frametime_counter.get_average());
+                    let max_fps = inv_or_zero(self.frametime_counter.get_min().copied());
 
-                    ui.label(format!(
-                        "Current FPS: {fps:?}",
-                    ));
+                    if max_fps > 0.0 {
+                        ProgressBar::new((fps / max_fps) as f32).text(format!("Current FPS: {fps:?}")).ui(ui);
+                    }
 
                     let old_sprite_atlas = self.sprite_atlas;
 
