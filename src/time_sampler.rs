@@ -34,7 +34,7 @@ where S::Output: Default + Copy
 impl<const N: usize, S: Sampler> SampleHolder<N, S>
 where S::Output: Sized
 {
-    pub fn new_with_function (f: impl Fn(usize) -> S::Output, sampler: S) -> Self {
+    pub fn new_from_fn(f: impl Fn(usize) -> S::Output, sampler: S) -> Self {
         Self {
             sampler,
             samples: std::array::from_fn(f),
@@ -47,7 +47,7 @@ where S::Output: Sized
 impl<const N: usize, S: Sampler> SampleHolder<N, S>
 where S::Output: Clone
 {
-    pub fn new_cloning (sample_default: S::Output, sampler: S) -> Self {
+    pub fn new_clone(sample_default: S::Output, sampler: S) -> Self {
         Self {
             sampler,
             samples: std::array::from_fn(|_| sample_default.clone()),
@@ -91,7 +91,7 @@ where S::Output: Add<Output = S::Output> + Div<u32, Output = S::Output> + Defaul
             return None;
         }
 
-        let mut sum = S::Output::default();
+        let mut sum: S::Output = Default::default();
 
         for sample in &self.samples[0..self.end()] {
             sum = sum + *sample;
