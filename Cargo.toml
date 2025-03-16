@@ -3,12 +3,18 @@ name = "minesweeper"
 version = "0.1.0"
 edition = "2024"
 
-[profile.release]
-panic = "abort"
-
 [dependencies]
+chrono = "0.4.40"
 eframe = { version = "0.31.0", features = ["persistence"] }
 egui = "0.31.0"
 fastrand = "2.3.0"
 image = "0.25.5"
 itertools = "0.14.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"
+web-sys = "0.3.70"           # to access the DOM (to hide the loading text)
+
+[profile.release]
+panic = "abort"
+opt-level = 3

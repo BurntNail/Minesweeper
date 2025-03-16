@@ -4,7 +4,7 @@ pub use duration::*;
 mod duration {
     use std::fmt::{Display, Formatter};
     use std::num::ParseIntError;
-    use std::time::Duration;
+    use chrono::TimeDelta;
 
     const DURATION_SEPARATOR: char = '-';
 
@@ -13,6 +13,10 @@ mod duration {
         CantFindSeparator,
         EmptySeconds,
         EmptyNanos,
+        InvalidTime {
+            secs: i64,
+            nanos: u32
+        },
         ErrorParsingSeconds(ParseIntError),
         ErrorParsingNanos(ParseIntError),
     }
@@ -29,6 +33,7 @@ mod duration {
                 Self::ErrorParsingNanos(e) => {
                     write!(f, "Error parsing sub-second nanoseconds: {e}")
                 }
+                Self::InvalidTime {secs, nanos} => write!(f, "Invalid time provided - {secs}s, {nanos} nanos"),
             }
         }
     }
@@ -43,14 +48,14 @@ mod duration {
         }
     }
 
-    pub fn serialise_extra_time(extra_time: Duration) -> String {
-        let secs = extra_time.as_secs();
+    pub fn serialise_extra_time(extra_time: TimeDelta) -> String {
+        let secs = extra_time.num_seconds();
         let nanos = extra_time.subsec_nanos();
 
         format!("{secs}{DURATION_SEPARATOR}{nanos}")
     }
 
-    pub fn deserialise_extra_time(sered: impl AsRef<str>) -> Result<Duration, DurationSerError> {
+    pub fn deserialise_extra_time(sered: impl AsRef<str>) -> Result<TimeDelta, DurationSerError> {
         let sered = sered.as_ref();
         let (secs, nanos) = {
             let sep_index = sered
@@ -71,7 +76,7 @@ mod duration {
         }
         let nanos = nanos.parse().map_err(DurationSerError::ErrorParsingNanos)?;
 
-        Ok(Duration::new(secs, nanos))
+        TimeDelta::new(secs, nanos).ok_or(DurationSerError::InvalidTime {secs, nanos})
     }
 }
 

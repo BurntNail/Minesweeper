@@ -2,7 +2,8 @@
 
 use std::ops::Add;
 use std::ops::Div;
-use std::time::{Duration, Instant};
+use chrono::{DateTime, Local, TimeDelta};
+use crate::ChronoDateTimeExt;
 
 pub trait Sampler: Default {
     type Output;
@@ -88,7 +89,7 @@ impl<const N: usize, S: Sampler> SampleHolder<N, S> {
 
 impl<const N: usize, S: Sampler> SampleHolder<N, S>
 where
-    S::Output: Add<Output = S::Output> + Div<u32, Output = S::Output> + Default + Copy,
+    S::Output: Add<Output = S::Output> + Div<i32, Output = S::Output> + Default + Copy,
 {
     pub fn get_average(&self) -> Option<S::Output> {
         if self.next_index == 0 && !self.are_all_valid {
@@ -101,7 +102,7 @@ where
             sum = sum + *sample;
         }
 
-        Some(sum / (self.end() as u32))
+        Some(sum / (self.end() as i32))
     }
 }
 
@@ -119,16 +120,16 @@ where
 }
 
 #[derive(Default)]
-pub struct InstantSampler(Option<Instant>);
+pub struct InstantSampler(Option<DateTime<Local>>);
 
 impl Sampler for InstantSampler {
-    type Output = Duration;
+    type Output = TimeDelta;
 
     fn start(&mut self) {
-        self.0 = Some(Instant::now());
+        self.0 = Some(Local::now());
     }
 
     fn stop(&mut self) -> Option<Self::Output> {
-        self.0.take().map(|i| i.elapsed())
+        self.0.take().map(ChronoDateTimeExt::elapsed)
     }
 }

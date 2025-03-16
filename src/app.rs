@@ -3,21 +3,22 @@ use crate::ser::{InvalidDataError, deserialise_extra_time, serialise_extra_time}
 use crate::time_sampler::{InstantSampler, SampleHolder};
 use eframe::{App, CreationContext, Frame, Storage};
 use egui::{
-    Color32, Context, CursorIcon, Grid, ProgressBar, Rect, Scene, Sense, Slider, TextureHandle,
+    Color32, Context, CursorIcon, Grid, Rect, Scene, Sense, Slider, TextureHandle,
     Widget, pos2,
 };
-use std::time::{Duration, Instant};
+use chrono::{DateTime, Local, TimeDelta};
+use crate::ChronoDateTimeExt;
 
 ///Struct to keep a hold of all things related to the minesweeper UI/app
 pub struct MinesweeperApp {
     ///The actual minesweeper board
     board: Board,
     ///Any extra time to add to the count from previous sessions
-    extra_time: Duration,
+    extra_time: TimeDelta,
     ///When the game started - can be [`None`] if nothing has been placed yet
-    game_started: Option<Instant>,
+    game_started: Option<DateTime<Local>>,
     ///When the game finished - will be [`None`] until the game finishes.
-    game_stopped: Option<Instant>,
+    game_stopped: Option<DateTime<Local>>,
     ///The [`Rect`] used to draw the board - this is used for the [`Scene`] that allows pan/zoom-ing.
     board_rect: Rect,
     ///The width of the next board to be created
@@ -47,7 +48,7 @@ impl MinesweeperApp {
     ) -> Result<Self, InvalidDataError> {
         //assume we can't get any previous data
         let mut previous_data = None;
-        let mut extra_time = Duration::new(0, 0);
+        let mut extra_time = TimeDelta::zero();
         let mut game_started = None;
         let mut texture_cache = TextureCache::default();
         let mut cheats_enabled = false;
@@ -83,7 +84,7 @@ impl MinesweeperApp {
                         //if it isn't zero, assume we're still playing and set the start time to now
                         if !dur.is_zero() {
                             extra_time = dur;
-                            game_started = Some(Instant::now());
+                            game_started = Some(Local::now());
                         }
                     }
                     Err(e) => eprintln!("Error deser-ing extra time: {e:?}"),
@@ -159,11 +160,11 @@ impl App for MinesweeperApp {
                                     }
                                 }),
                                 _ => format!("Game in progress for {}s", {
-                                    (self.game_started.map_or(Duration::new(0, 0), |start| {
+                                    (self.game_started.map_or(TimeDelta::zero(), |start| {
                                         ctx.request_repaint_after_secs(0.25);
                                         start.elapsed()
                                     }) + self.extra_time)
-                                        .as_secs()
+                                        .num_seconds()
                                 }),
                             },
                         );
@@ -195,7 +196,7 @@ impl App for MinesweeperApp {
                         if reset_vars {
                             self.game_started = None;
                             self.game_stopped = None;
-                            self.extra_time = Duration::new(0, 0);
+                            self.extra_time = TimeDelta::zero();
                             self.cached_counts.clear();
                             self.cheats_enabled = false;
                             self.board.has_given_up = false;
@@ -242,17 +243,26 @@ impl App for MinesweeperApp {
                         ui.label("NB: Mistakes have been undone");
                     }
 
-                    let inv_or_zero =
-                        |x: Option<Duration>| x.map_or(0.0, |dur| 1.0 / dur.as_secs_f64());
-                    let fps = inv_or_zero(self.frametime_counter.get_average());
-                    let max_fps = inv_or_zero(self.frametime_counter.get_min().copied());
 
-                    if max_fps > 0.0 {
-                        ProgressBar::new((fps / max_fps) as f32)
-                            .text(format!(
-                                "Current FPS: {fps:.1}, Recent Max FPS: {max_fps:.1}"
-                            ))
-                            .ui(ui);
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        use egui::ProgressBar;
+                        use crate::ChronoTimeDeltaExt;
+
+                        let inv_or_zero =
+                            |x: Option<TimeDelta>| x.map_or(0.0, |dur| 1.0 / dur.as_secs_f64());
+                        let fps = inv_or_zero(self.frametime_counter.get_average());
+                        // let max_fps = inv_or_zero(self.frametime_counter.get_min().copied());
+
+                        // if max_fps > 0.0 {
+                        //     ProgressBar::new((fps / max_fps) as f32)
+                        //         .text(format!(
+                        //             "Current FPS: {fps:.1}, Recent Max FPS: {max_fps:.1}"
+                        //         ))
+                        //         .ui(ui);
+                        // }
+
+                        ui.label(format!("FPS: {fps:.1}"));
                     }
 
                     let old_sprite_atlas = self.sprite_atlas;
@@ -377,10 +387,10 @@ impl App for MinesweeperApp {
                         }
 
                         if interaction_happened && self.game_started.is_none() {
-                            self.game_started = Some(Instant::now());
+                            self.game_started = Some(Local::now());
                         }
                         if game_is_now_over && self.game_stopped.is_none() {
-                            self.game_stopped = Some(Instant::now());
+                            self.game_stopped = Some(Local::now());
                         }
 
                         if column == self.board.get_width() - 1 {
@@ -406,10 +416,10 @@ impl App for MinesweeperApp {
         storage.set_string("data", data);
 
         let extra_time = serialise_extra_time(match (self.game_started, self.game_stopped) {
-            (None, None) => Duration::new(0, 0),
+            (None, None) => TimeDelta::zero(),
             (Some(started), None) => started.elapsed() + self.extra_time,
             (None, Some(_stopped)) => unreachable!("cannot have stopped w/o started"),
-            (Some(_started), Some(_stopped)) => Duration::new(0, 0),
+            (Some(_started), Some(_stopped)) => TimeDelta::zero(),
         });
 
         storage.set_string("extratime", extra_time);
