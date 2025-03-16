@@ -18,9 +18,9 @@ pub struct SampleHolder<const N: usize, S: Sampler> {
 }
 
 impl<const N: usize, S: Sampler> SampleHolder<N, S>
-where S::Output: Default + Copy
+where
+    S::Output: Default + Copy,
 {
-    //TODO: make a version that doesn't require copy?
     pub fn new_default_copy() -> Self {
         Self {
             sampler: S::default(),
@@ -32,27 +32,29 @@ where S::Output: Default + Copy
 }
 
 impl<const N: usize, S: Sampler> SampleHolder<N, S>
-where S::Output: Sized
+where
+    S::Output: Sized,
 {
     pub fn new_from_fn(f: impl Fn(usize) -> S::Output, sampler: S) -> Self {
         Self {
             sampler,
             samples: std::array::from_fn(f),
             next_index: 0,
-            are_all_valid: false
+            are_all_valid: false,
         }
     }
 }
 
 impl<const N: usize, S: Sampler> SampleHolder<N, S>
-where S::Output: Clone
+where
+    S::Output: Clone,
 {
     pub fn new_clone(sample_default: S::Output, sampler: S) -> Self {
         Self {
             sampler,
             samples: std::array::from_fn(|_| sample_default.clone()),
             next_index: 0,
-            are_all_valid: false
+            are_all_valid: false,
         }
     }
 }
@@ -75,7 +77,7 @@ impl<const N: usize, S: Sampler> SampleHolder<N, S> {
         }
     }
 
-    fn end (&self) -> usize {
+    fn end(&self) -> usize {
         if self.are_all_valid {
             N - 1
         } else {
@@ -85,7 +87,9 @@ impl<const N: usize, S: Sampler> SampleHolder<N, S> {
 }
 
 impl<const N: usize, S: Sampler> SampleHolder<N, S>
-where S::Output: Add<Output = S::Output> + Div<u32, Output = S::Output> + Default + Copy {
+where
+    S::Output: Add<Output = S::Output> + Div<u32, Output = S::Output> + Default + Copy,
+{
     pub fn get_average(&self) -> Option<S::Output> {
         if self.next_index == 0 && !self.are_all_valid {
             return None;
@@ -102,8 +106,10 @@ where S::Output: Add<Output = S::Output> + Div<u32, Output = S::Output> + Defaul
 }
 
 impl<const N: usize, S: Sampler> SampleHolder<N, S>
-where S::Output: Ord {
-    pub fn get_max (&self) -> Option<&S::Output> {
+where
+    S::Output: Ord,
+{
+    pub fn get_max(&self) -> Option<&S::Output> {
         self.samples[0..self.end()].iter().max()
     }
 

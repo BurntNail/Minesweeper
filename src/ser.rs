@@ -77,11 +77,11 @@ mod duration {
 
 mod data {
     use crate::data::Data;
+    use itertools::Itertools;
     use std::collections::{HashSet, VecDeque};
     use std::fmt::{Display, Formatter};
     use std::num::ParseIntError;
     use std::str::FromStr;
-    use itertools::Itertools;
 
     #[derive(Debug)]
     pub enum DataReadError {
@@ -162,7 +162,7 @@ mod data {
     enum DataContainmentMethod {
         NoData,
         Indices,
-        DiscoveredBitflagsElseIndices
+        DiscoveredBitflagsElseIndices,
     }
 
     const USIZE_BITS: usize = usize::BITS as usize;
@@ -185,7 +185,7 @@ mod data {
                 'n' => Self::NoData,
                 'y' => Self::Indices,
                 'b' => Self::DiscoveredBitflagsElseIndices,
-                 _ => return Err(InvalidDataError::BadCharacter),
+                _ => return Err(InvalidDataError::BadCharacter),
             })
         }
     }
@@ -238,9 +238,11 @@ mod data {
 
             let (flagged, clicked, mines) = match data_container {
                 DataContainmentMethod::NoData => (HashSet::new(), HashSet::new(), HashSet::new()),
-                DataContainmentMethod::Indices | DataContainmentMethod::DiscoveredBitflagsElseIndices => {
+                DataContainmentMethod::Indices
+                | DataContainmentMethod::DiscoveredBitflagsElseIndices => {
                     //according to the docs, this conversion is guaranteed not to re-allocate and will take O(1)
-                    let mut numbers: VecDeque<_> = get_numbers(n_flagged + n_clicked + n_mines)?.into();
+                    let mut numbers: VecDeque<_> =
+                        get_numbers(n_flagged + n_clicked + n_mines)?.into();
                     debug_assert_eq!(numbers.len(), n_flagged + n_clicked + n_mines);
 
                     let get_hashset = |numbers: &mut VecDeque<_>, count| {
@@ -262,7 +264,8 @@ mod data {
 
                         for y in 0..height {
                             for x_chunk in &(0..width).chunks(USIZE_BITS) {
-                                let this_chunk = numbers.pop_front().ok_or(DataReadError::NotEnoughData)?;
+                                let this_chunk =
+                                    numbers.pop_front().ok_or(DataReadError::NotEnoughData)?;
 
                                 for (i, x) in x_chunk.into_iter().enumerate() {
                                     if (this_chunk & (1 << i)) > 0 {
@@ -315,9 +318,8 @@ mod data {
                 mines,
             } = data;
 
-            let hashset_to_indices = |hs: HashSet<_>| {
-                hs.into_iter().map(|pos| Data::coords_to_index(pos, width))
-            };
+            let hashset_to_indices =
+                |hs: HashSet<_>| hs.into_iter().map(|pos| Data::coords_to_index(pos, width));
 
             let (clicked, n_mines, data_containment_method) = if mines.is_empty() {
                 debug_assert!(mines.is_empty());
@@ -325,8 +327,12 @@ mod data {
                 debug_assert!(clicked.is_empty());
 
                 (vec![], number_of_mines, DataContainmentMethod::NoData)
-            }  else if clicked.len() < (width * height / USIZE_BITS) {
-                (hashset_to_indices(clicked).collect(), mines.len(), DataContainmentMethod::Indices)
+            } else if clicked.len() < (width * height / USIZE_BITS) {
+                (
+                    hashset_to_indices(clicked).collect(),
+                    mines.len(),
+                    DataContainmentMethod::Indices,
+                )
             } else {
                 let mut output_clicked = Vec::with_capacity(width * height / USIZE_BITS);
 
@@ -344,7 +350,11 @@ mod data {
                     }
                 }
 
-                (output_clicked, mines.len(), DataContainmentMethod::DiscoveredBitflagsElseIndices)
+                (
+                    output_clicked,
+                    mines.len(),
+                    DataContainmentMethod::DiscoveredBitflagsElseIndices,
+                )
             };
 
             let mut output = char::from(data_containment_method).to_string();
@@ -354,7 +364,7 @@ mod data {
                 .chain(
                     hashset_to_indices(flagged)
                         .chain(clicked)
-                        .chain(hashset_to_indices(mines))
+                        .chain(hashset_to_indices(mines)),
                 )
             {
                 output.push_str(&format!("{n},"));

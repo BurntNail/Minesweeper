@@ -1,7 +1,7 @@
 use crate::data::Data;
 use crate::ser::InvalidDataError;
 use egui::ahash::HashMap;
-use egui::{ColorImage, Context, Rect, TextureHandle, TextureOptions, pos2, Color32};
+use egui::{Color32, ColorImage, Context, Rect, TextureHandle, TextureOptions, pos2};
 use fastrand::Rng;
 use image::{ImageFormat, ImageReader};
 use std::collections::hash_map::Entry;
@@ -110,7 +110,7 @@ impl Board {
         self.data.click(pos, &mut self.rng)
     }
 
-    pub fn undo_mistake (&mut self) {
+    pub fn undo_mistake(&mut self) {
         if self.game_has_been_won() || !self.game_is_over() {
             return;
         }
@@ -190,7 +190,7 @@ impl SpriteAtlas {
         match self {
             Self::WinMine => include_bytes!("../WinmineXP.png"),
             Self::RTXOn => include_bytes!("../RTXOn.png"),
-            Self::DarkMode => include_bytes!("../NightMode.png")
+            Self::DarkMode => include_bytes!("../NightMode.png"),
         }
     }
 
@@ -209,10 +209,10 @@ impl SpriteAtlas {
         }
     }
 
-    pub const fn background_colour (self) -> Option<Color32> {
+    pub const fn background_colour(self) -> Option<Color32> {
         match self {
             Self::DarkMode => Some(Color32::from_rgb(0x2d, 0x17, 0x10)),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -384,7 +384,6 @@ impl RenderedGridElement {
                     GridElementType::Mine => rect(0, 0),
                 }
             }
-
         }
     }
 }

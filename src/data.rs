@@ -117,12 +117,14 @@ impl Data {
     pub fn click(&mut self, pos: (usize, usize), rng: &mut Rng) -> bool {
         //if mines are empty, we need to add more mines!
         if self.mines.is_empty() {
-            self.mines.extend(rng.choose_multiple(
-                (0..(self.width * self.height))
-                    .map(|x| Self::index_to_coords(x, self.width))
-                    .filter(|candidate| pos != *candidate),
-                self.number_of_mines,
-            ));
+            self.mines.extend(
+                rng.choose_multiple(
+                    (0..(self.width * self.height))
+                        .map(|x| Self::index_to_coords(x, self.width))
+                        .filter(|candidate| pos != *candidate),
+                    self.number_of_mines,
+                ),
+            );
         }
 
         //if we've already clicked it, skip out
