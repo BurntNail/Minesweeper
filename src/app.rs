@@ -7,7 +7,7 @@ use egui::{
     Widget, pos2,
 };
 use chrono::{DateTime, Local, TimeDelta};
-use crate::ChronoDateTimeExt;
+use crate::{ChronoDateTimeExt, ChronoTimeDeltaExt};
 
 ///Struct to keep a hold of all things related to the minesweeper UI/app
 pub struct MinesweeperApp {
@@ -146,25 +146,25 @@ impl App for MinesweeperApp {
                                 self.board.game_has_been_won(),
                             ) {
                                 (true, _) => format!(
-                                    "Game Lost: {} correct flag(s) in {:?}",
+                                    "Game Lost: {} correct flag(s) in {}",
                                     self.board.successfully_flagged(),
                                     match self.game_started.zip(self.game_stopped) {
                                         Some((start, stop)) => stop - start + self.extra_time,
                                         None => self.extra_time,
-                                    }
+                                    }.as_nice_time::<3>()
                                 ),
-                                (_, true) => format!("Game Won in {:?}", {
+                                (_, true) => format!("Game Won in {}", {
                                     match self.game_started.zip(self.game_stopped) {
                                         Some((start, stop)) => stop - start + self.extra_time,
                                         None => self.extra_time,
-                                    }
+                                    }.as_nice_time::<3>()
                                 }),
-                                _ => format!("Game in progress for {}s", {
+                                _ => format!("Game in progress for {}", {
                                     (self.game_started.map_or(TimeDelta::zero(), |start| {
                                         ctx.request_repaint_after_secs(0.25);
                                         start.elapsed()
                                     }) + self.extra_time)
-                                        .num_seconds()
+                                        .as_nice_time::<0>()
                                 }),
                             },
                         );
@@ -246,7 +246,6 @@ impl App for MinesweeperApp {
 
                     #[cfg(not(target_arch = "wasm32"))]
                     {
-                        use egui::ProgressBar;
                         use crate::ChronoTimeDeltaExt;
 
                         let inv_or_zero =

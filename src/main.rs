@@ -5,15 +5,8 @@
     clippy::cast_sign_loss
 )]
 
-use chrono::{DateTime, Local, TimeDelta};
-use crate::app::MinesweeperApp;
-use crate::board::SpriteAtlas;
-
-mod app;
-mod board;
-mod data;
-mod ser;
-mod time_sampler;
+use minesweeper::app::MinesweeperApp;
+use minesweeper::board::SpriteAtlas;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
@@ -91,24 +84,4 @@ fn main() {
             }
         }
     });
-}
-
-pub trait ChronoDateTimeExt {
-    fn elapsed (self) -> TimeDelta;
-}
-
-pub trait ChronoTimeDeltaExt {
-    fn as_secs_f64 (&self) -> f64;
-}
-
-impl ChronoDateTimeExt for DateTime<Local> {
-    fn elapsed(self) -> TimeDelta {
-        Local::now() - self
-    }
-}
-
-impl ChronoTimeDeltaExt for TimeDelta {
-    fn as_secs_f64(&self) -> f64 {
-        (self.num_seconds() as f64) + ((self.subsec_nanos() as f64) / 1_000_000_000.0)
-    }
 }

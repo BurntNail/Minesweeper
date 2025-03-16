@@ -1,5 +1,10 @@
 /target
-dist
 target
 target_ra
 target_wasm
+
+dist
+
+*.data
+*.data.old
+flamegraph.svg
