@@ -19,8 +19,10 @@ wasm-bindgen-futures = "0.4"
 web-sys = "0.3.70"           # to access the DOM (to hide the loading text)
 
 [profile.release]
-panic = "abort"
-opt-level = 3
+opt-level = 2
+
+[profile.bench]
+debug = true
 
 [[bench]]
 name = "board"

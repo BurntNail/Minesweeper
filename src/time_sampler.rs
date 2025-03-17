@@ -89,16 +89,16 @@ impl<const N: usize, S: Sampler> SampleHolder<N, S> {
 
 impl<const N: usize, S: Sampler> SampleHolder<N, S>
 where
-    S::Output: Add<Output = S::Output> + Div<i32, Output = S::Output> + Default + Copy,
+    S::Output: Add<Output = S::Output> + Div<i32, Output = S::Output> + Copy,
 {
     pub fn get_average(&self) -> Option<S::Output> {
         if self.next_index == 0 && !self.are_all_valid {
             return None;
         }
 
-        let mut sum: S::Output = Default::default();
+        let mut sum = self.samples[0];
 
-        for sample in &self.samples[0..self.end()] {
+        for sample in &self.samples[1..self.end()] {
             sum = sum + *sample;
         }
 

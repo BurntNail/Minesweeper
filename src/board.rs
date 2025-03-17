@@ -110,47 +110,58 @@ impl Board {
         self.data.click(pos, &mut self.rng)
     }
 
-    pub fn undo_mistake(&mut self) {
+    pub fn undo_mistake(&mut self) -> usize {
         if self.game_has_been_won() || !self.game_is_over() {
-            return;
+            return 0;
         }
 
+        //could do this fun one-liner, but i feel like below is clearer :)
+        // self.data.mines.iter().filter(|mine| {
+        //     self.data.clicked.remove(mine)
+        // }).count()
+
+        let mut number_undone = 0;
         for mine in &self.data.mines {
-            self.data.clicked.remove(mine);
+            if self.data.clicked.remove(mine) {
+                number_undone += 1;
+            }
         }
+        number_undone
     }
 
     pub fn render(&self) -> Vec<RenderedGridElement> {
-        let game_is_over = self.game_is_over();
+        let mut board = vec![RenderedGridElement {
+            ty: GridElementType::Undiscovered, flagged: false
+        }; self.data.height * self.data.width];
 
-        //for each column
-        (0..self.data.height)
-            //and each row
-            .flat_map(|y| (0..self.data.width).map(move |x| (x, y)))
-            .map(|pos| {
-                //work out the type, based off of various factors
-                let ty = if self.data.mines.contains(&pos) && self.data.clicked.contains(&pos) {
-                    GridElementType::Exploded
-                } else if self.data.mines.contains(&pos) && game_is_over {
-                    GridElementType::Mine
-                } else if self.data.clicked.contains(&pos) {
-                    GridElementType::Discovered {
-                        should_display_count: self
-                            .data
-                            .get_neighbours(pos, true)
-                            .any(|neighbour| !self.data.clicked.contains(&neighbour)),
-                    }
+        for flagged in &self.data.flagged {
+            let index = Data::coords_to_index(*flagged, self.data.width);
+            board[index].flagged = true;
+        }
+
+        for clicked in &self.data.clicked {
+            let index = Data::coords_to_index(*clicked, self.data.width);
+            board[index].ty = GridElementType::Discovered {
+                                should_display_count: self
+                                    .data
+                                    .get_neighbours(*clicked, true)
+                                    .any(|neighbour| !self.data.clicked.contains(&neighbour)),
+            }
+        }
+
+        if self.game_is_over() {
+            for mine in &self.data.mines {
+                let index = Data::coords_to_index(*mine, self.data.width);
+                if self.data.clicked.contains(mine) {
+                    board[index].ty = GridElementType::Exploded;
                 } else {
-                    GridElementType::Undiscovered
-                };
-
-                //and return the rendered grid element
-                RenderedGridElement {
-                    ty,
-                    flagged: self.data.flagged.contains(&pos),
+                    board[index].ty = GridElementType::Mine;
                 }
-            })
-            .collect()
+            }
+        }
+
+
+        board
     }
 
     pub fn game_has_been_won(&self) -> bool {

@@ -35,7 +35,7 @@ pub struct MinesweeperApp {
     frametime_counter: SampleHolder<50, InstantSampler>,
     sprite_atlas: SpriteAtlas,
     texture_cache: TextureCache,
-    cheats_enabled: bool,
+    mistakes_undone: usize,
 }
 
 impl MinesweeperApp {
@@ -51,7 +51,7 @@ impl MinesweeperApp {
         let mut extra_time = TimeDelta::zero();
         let mut game_started = None;
         let mut texture_cache = TextureCache::default();
-        let mut cheats_enabled = false;
+        let mut mistakes_undone = 0;
 
         let image_handle = {
             cc.egui_ctx.input_mut(|input_state| {
@@ -79,7 +79,7 @@ impl MinesweeperApp {
             //try to get previous session time
             if let Some(sered) = storage.get_string("extratime") {
                 //and deserialise it
-                match deserialise_extra_time(sered) {
+                match deserialise_extra_time(&sered) {
                     Ok(dur) => {
                         //if it isn't zero, assume we're still playing and set the start time to now
                         if !dur.is_zero() {
@@ -87,15 +87,15 @@ impl MinesweeperApp {
                             game_started = Some(Local::now());
                         }
                     }
-                    Err(e) => eprintln!("Error deser-ing extra time: {e:?}"),
+                    Err(e) => eprintln!("Error deser-ing extra time, recv {sered:?}, got error {e}"),
                 }
             }
 
-            if storage
-                .get_string("cheater")
-                .map_or(false, |res| res == "y")
-            {
-                cheats_enabled = true;
+            if let Some(cheats_undone_count) = storage.get_string("cheater") {
+                match cheats_undone_count.parse() {
+                    Ok(x) => mistakes_undone = x,
+                    Err(e) => eprintln!("Error parsing mistakes undone, recv {cheats_undone_count:?}, got err: {e}")
+                }
             }
         }
 
@@ -125,7 +125,7 @@ impl MinesweeperApp {
             sprite_atlas,
             frametime_counter: SampleHolder::new_default_copy(),
             texture_cache,
-            cheats_enabled,
+            mistakes_undone,
         })
     }
 }
@@ -175,8 +175,7 @@ impl App for MinesweeperApp {
 
                         if self.board.game_is_over() && !self.board.has_given_up {
                             if ui.button("Undo Mistake?").clicked() {
-                                self.board.undo_mistake();
-                                self.cheats_enabled = true;
+                                self.mistakes_undone += self.board.undo_mistake();
                                 self.game_stopped = None;
                             }
                         } else if ui.button("Give Up?").clicked() {
@@ -198,7 +197,7 @@ impl App for MinesweeperApp {
                             self.game_stopped = None;
                             self.extra_time = TimeDelta::zero();
                             self.cached_counts.clear();
-                            self.cheats_enabled = false;
+                            self.mistakes_undone = 0;
                             self.board.has_given_up = false;
                         }
                     }
@@ -239,8 +238,8 @@ impl App for MinesweeperApp {
                 });
 
                 ui.vertical(|ui| {
-                    if self.cheats_enabled {
-                        ui.label("NB: Mistakes have been undone");
+                    if self.mistakes_undone > 0 {
+                        ui.label(format!("NB: {} Mistake(s) have been undone", self.mistakes_undone));
                     }
 
 
@@ -425,7 +424,7 @@ impl App for MinesweeperApp {
 
         storage.set_string(
             "cheater",
-            if self.cheats_enabled { 'y' } else { 'n' }.to_string(),
+            self.mistakes_undone.to_string()
         );
     }
 }

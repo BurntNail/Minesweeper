@@ -33,10 +33,10 @@ impl ChronoTimeDeltaExt for TimeDelta {
         let secs = self.num_seconds() % 60;
 
         let decimals = match DECIMAL_PLACES {
-            0 | _ if self.subsec_nanos() == 0 => "".to_string(),
+            0 => "".to_string(),
             n => format!(".{}", self.subsec_nanos() / 10_i32.pow(9 - n)),
         };
 
-        format!("{mins}'{secs}{decimals}\"")
+        format!("{mins}m{secs}{decimals}s")
     }
 }
